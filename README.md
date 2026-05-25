@@ -39,6 +39,7 @@ Every robot model is **procedurally generated with accurate proportions**, uses 
 | **Mars Rover** | Wheeled Mobile | 6 wheels + sample arm | NASA Perseverance |
 | **SCARA Arm** | Pick & Place | 4 (2 rotary + Z + tool) | Epson T-Series |
 | **Quadcopter Drone** | Aerial Robot | 4 rotors | DJI-style FPV |
+| **Dexterous Bimanual Arm** | Bimanual Manipulator | 20 (Shared L/R + 10 fingers) | Shadow Robot / Tesla Optimus Hands |
 
 ---
 
