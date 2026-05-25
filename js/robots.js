@@ -661,7 +661,273 @@ export function buildSCARA(joints, params) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ROBOT 6 — QUADCOPTER DRONE
+// ROBOT 6 — DEXTEROUS BIMANUAL ARM (Torso + two 5-finger hands)
+// ─────────────────────────────────────────────────────────────
+
+// Helper: build one full dexterous arm attached to parent.
+// side: -1=left, +1=right. Both arms share the same 20 joints (mirrored).
+function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, prefix) {
+  // ── SHOULDER BEARING (decorative, on the mount face)
+  const shoulderBearing = ring(22, 36, 10, 32, MAT.chrome, `${prefix} Shoulder Bearing`);
+  shoulderBearing.rotation.z = Math.PI / 2;
+  parent.add(shoulderBearing);
+
+  const shoulderBall = sphere(18, 20, MAT.chrome, `${prefix} Shoulder Ball`);
+  parent.add(shoulderBall);
+
+  // ── SHOULDER GROUP — pitch + yaw, mirrored per side
+  const shoulderGroup = new THREE.Group();
+  shoulderGroup.rotation.z = joints[0] * side; // raise/lower arm
+  shoulderGroup.rotation.y = joints[1] * side; // swing forward/back
+  parent.add(shoulderGroup);
+
+  // ── T-POSE BASE: arm extends OUTWARD (\u00b1X) not downward
+  // right arm side=+1 → rotation.z=+π/2 → local -Y becomes world +X
+  // left  arm side=-1 → rotation.z=-π/2 → local -Y becomes world -X
+  const tPose = new THREE.Group();
+  tPose.rotation.z = side * Math.PI / 2;
+  shoulderGroup.add(tPose);
+
+  // ── UPPER ARM
+  const upperArmGroup = new THREE.Group();
+  tPose.add(upperArmGroup);
+
+  const upperOuter = box(28, upperArmLen, 24, MAT.whitePolycarbonate, `${prefix} Upper Arm Shell`);
+  upperOuter.position.y = -upperArmLen / 2;
+  upperArmGroup.add(upperOuter);
+
+  const upperInner = box(18, upperArmLen - 10, 16, MAT.darkSteel, `${prefix} Upper Arm Frame`);
+  upperInner.position.y = -upperArmLen / 2;
+  upperArmGroup.add(upperInner);
+
+  for (let s of [-1, 1]) {
+    const act = cyl(5, 5, upperArmLen * 0.55, 12, MAT.aluminium);
+    act.position.set(s * 10, -upperArmLen / 2, 0);
+    upperArmGroup.add(act);
+    const groove = box(3, upperArmLen * 0.45, 4, MAT.carbonFiber);
+    groove.position.set(s * 16, -upperArmLen / 2, 0);
+    upperArmGroup.add(groove);
+  }
+
+  // ── ELBOW — rotation negated \u00d7 side so positive joint[2] = bends DOWN for both arms
+  // (because the tPose rotation flips the effective bend direction per side)
+  const elbowGroup = new THREE.Group();
+  elbowGroup.position.y = -upperArmLen;
+  elbowGroup.rotation.z = -joints[2] * side;
+  upperArmGroup.add(elbowGroup);
+
+  const elbowHousing = cyl(14, 14, 32, 20, MAT.blackAnodised, `${prefix} Elbow Housing`);
+  elbowHousing.rotation.z = Math.PI / 2;
+  elbowGroup.add(elbowHousing);
+
+  for (let s of [-1, 1]) {
+    const eb = cyl(16, 18, 8, 24, MAT.chrome, `${prefix} Elbow Bearing`);
+    eb.rotation.z = Math.PI / 2;
+    eb.position.x = s * 16;
+    elbowGroup.add(eb);
+  }
+
+  const elbowMotor = box(18, 24, 18, MAT.darkSteel, `${prefix} Elbow Motor`);
+  elbowMotor.position.set(0, 10, 0);
+  elbowGroup.add(elbowMotor);
+
+  // ── FOREARM
+  const forearmGroup = new THREE.Group();
+  forearmGroup.position.y = -8;
+  elbowGroup.add(forearmGroup);
+
+  const foreOuter = box(22, forearmLen, 20, MAT.whitePolycarbonate, `${prefix} Forearm Shell`);
+  foreOuter.position.y = -forearmLen / 2;
+  forearmGroup.add(foreOuter);
+
+  const foreInner = box(14, forearmLen - 8, 12, MAT.aluminium, `${prefix} Forearm Frame`);
+  foreInner.position.y = -forearmLen / 2;
+  forearmGroup.add(foreInner);
+
+  const twistRing = ring(9, 14, 12, 24, MAT.chrome, `${prefix} Twist Ring`);
+  twistRing.position.y = -forearmLen * 0.35;
+  forearmGroup.add(twistRing);
+
+  for (let i = 0; i < 3; i++) {
+    const tendon = cyl(2.5, 2.5, 5, 8, MAT.brass);
+    tendon.rotation.x = Math.PI / 2;
+    tendon.position.set(0, -forearmLen * (0.3 + i * 0.2), 11);
+    forearmGroup.add(tendon);
+  }
+
+  // ── WRIST
+  const wristGroup = new THREE.Group();
+  wristGroup.position.y = -forearmLen;
+  wristGroup.rotation.x = joints[3];          // flex forward/back
+  wristGroup.rotation.z = -joints[4] * side;  // rotation, mirrored
+  forearmGroup.add(wristGroup);
+
+  const wristBall = sphere(12, 16, MAT.chrome, `${prefix} Wrist Ball`);
+  wristGroup.add(wristBall);
+
+  const wristHousing = cyl(14, 18, 18, 24, MAT.blackAnodised, `${prefix} Wrist Housing`);
+  wristHousing.position.y = -9;
+  wristGroup.add(wristHousing);
+
+  // ── PALM
+  const palmGroup = new THREE.Group();
+  palmGroup.position.y = -20;
+  wristGroup.add(palmGroup);
+
+  const palmBody = box(54, palmLen, 18, MAT.darkSteel, `${prefix} Palm`);
+  palmBody.position.y = -palmLen / 2;
+  palmGroup.add(palmBody);
+
+  const knucklePlate = box(58, 8, 16, MAT.blackAnodised, `${prefix} Knuckle Plate`);
+  knucklePlate.position.y = -palmLen - 2;
+  palmGroup.add(knucklePlate);
+
+  for (let i = 0; i < 5; i++) {
+    const sv = box(7, 8, 10, MAT.aluminium);
+    sv.position.set(-20 + i * 10, -palmLen * 0.5, 0);
+    palmGroup.add(sv);
+  }
+
+  // ── FINGERS — 5 fingers, 3 phalanges each, curl on X-axis
+  const thumbX = side * 27;
+  const fingerDefs = [
+    [`${prefix} Thumb`,  thumbX,  9, joints[5],  joints[6],  joints[7],  [26,20,16], side * 0.45 ],
+    [`${prefix} Index`,     -18, -2, joints[8],  joints[9],  joints[10], [32,24,16], 0           ],
+    [`${prefix} Middle`,     -6, -2, joints[11], joints[12], joints[13], [34,26,18], 0           ],
+    [`${prefix} Ring`,        6, -2, joints[14], joints[15], joints[16], [30,24,16], 0           ],
+    [`${prefix} Pinky`,      18, -2, joints[17], joints[18], joints[19], [24,18,14], 0           ],
+  ];
+
+  for (const [name, fx, fz, jB, jM, jT, len, spread] of fingerDefs) {
+    const fingerRoot = new THREE.Group();
+    fingerRoot.position.set(fx, -palmLen - 5, fz);
+    fingerRoot.rotation.z = spread;
+    palmGroup.add(fingerRoot);
+
+    const knuckleBall = sphere(4.5, 10, MAT.chrome, `${name} Knuckle`);
+    fingerRoot.add(knuckleBall);
+
+    const p1w = name.includes('Thumb') ? 8 : 6;
+
+    // Proximal phalange — rotation.x = curl forward/back
+    const p1Group = new THREE.Group();
+    p1Group.rotation.x = jB;
+    fingerRoot.add(p1Group);
+
+    const p1 = box(p1w, len[0], 9, MAT.whitePolycarbonate, `${name} Proximal`);
+    p1.position.y = -len[0] / 2;
+    p1Group.add(p1);
+
+    const j1 = cyl(4.5, 4.5, p1w + 4, 10, MAT.chrome, `${name} IP1`);
+    j1.rotation.z = Math.PI / 2;
+    j1.position.y = -len[0];
+    p1Group.add(j1);
+
+    // Medial phalange
+    const p2Group = new THREE.Group();
+    p2Group.position.y = -len[0];
+    p2Group.rotation.x = jM;
+    p1Group.add(p2Group);
+
+    const p2 = box(p1w - 1, len[1], 8, MAT.whitePolycarbonate, `${name} Medial`);
+    p2.position.y = -len[1] / 2;
+    p2Group.add(p2);
+
+    const j2 = cyl(3.5, 3.5, p1w + 2, 10, MAT.chrome, `${name} IP2`);
+    j2.rotation.z = Math.PI / 2;
+    j2.position.y = -len[1];
+    p2Group.add(j2);
+
+    // Distal phalange (fingertip)
+    const p3Group = new THREE.Group();
+    p3Group.position.y = -len[1];
+    p3Group.rotation.x = jT;
+    p2Group.add(p3Group);
+
+    const p3 = mesh(
+      new THREE.CylinderGeometry(1.8, p1w / 2 - 0.5, len[2], 10),
+      MAT.rubber,
+      `${name} Tip`
+    );
+    p3.position.y = -len[2] / 2;
+    p3Group.add(p3);
+
+    const nail = box(p1w - 3, len[2] * 0.6, 2.5, MAT.aluminium, `${name} Nail`);
+    nail.position.set(0, -len[2] * 0.38, 4.5);
+    p3Group.add(nail);
+  }
+}
+
+export function buildDexArm(joints, params) {
+  const {
+    upperArmLen = 120,
+    forearmLen  = 110,
+    palmLen     = 50,
+  } = params;
+
+  const root = new THREE.Group();
+
+  // ── TORSO COLUMN
+  const torsoH = 180;
+  const torsoW = 80;
+
+  // Main torso body
+  const torsoBody = box(torsoW, torsoH, 50, MAT.whitePolycarbonate, 'Torso Body');
+  torsoBody.position.y = torsoH / 2;
+  root.add(torsoBody);
+
+  // Torso inner structural spine
+  const torsoSpine = box(torsoW - 20, torsoH - 10, 36, MAT.darkSteel, 'Torso Spine');
+  torsoSpine.position.y = torsoH / 2;
+  root.add(torsoSpine);
+
+  // Torso accent panel (cyan strip down the front)
+  const torsoAccent = box(20, torsoH - 30, 8, MAT.cyan, 'Torso Accent');
+  torsoAccent.position.set(0, torsoH / 2, 27);
+  root.add(torsoAccent);
+
+  // Torso top collar
+  const collar = cyl(30, 36, 18, 24, MAT.blackAnodised, 'Torso Collar');
+  collar.position.y = torsoH + 9;
+  root.add(collar);
+
+  // Torso bottom base plate
+  const basePlate = box(torsoW + 20, 16, 60, MAT.darkSteel, 'Torso Base Plate');
+  basePlate.position.y = 8;
+  root.add(basePlate);
+
+  // Mounting rail on each side (where arms attach)
+  for (let s of [-1, 1]) {
+    const rail = box(12, torsoH * 0.7, 14, MAT.aluminium, s > 0 ? 'R Shoulder Rail' : 'L Shoulder Rail');
+    rail.position.set(s * (torsoW / 2 + 6), torsoH * 0.65, 0);
+    root.add(rail);
+  }
+
+  // ── LEFT ARM  (joints 0–19, side = -1)
+  const leftMount = new THREE.Group();
+  leftMount.position.set(-(torsoW / 2 + 18), torsoH * 0.82, 0);
+  root.add(leftMount);
+  buildSingleArm(leftMount,  -1, joints, upperArmLen, forearmLen, palmLen, 'L');
+
+  // ── RIGHT ARM  (joints mirrored, side = +1)
+  const rightMount = new THREE.Group();
+  rightMount.position.set( (torsoW / 2 + 18), torsoH * 0.82, 0);
+  root.add(rightMount);
+  buildSingleArm(rightMount, +1, joints, upperArmLen, forearmLen, palmLen, 'R');
+
+  // Lift torso so arms hang clear of the ground
+  // Shoulder height = 150 + 180*0.82 = ~298; arm length = ~375 → hands near y=0
+  root.position.y = 150;
+  return root;
+}
+
+// FK helper — returns zeros (IK not active for this robot)
+export function dexArmFK(joints, params) {
+  return { x: 0, y: 0, z: 0 };
+}
+
+// ─────────────────────────────────────────────────────────────
+// ROBOT 7 — QUADCOPTER DRONE
 // ─────────────────────────────────────────────────────────────
 export function buildDrone(joints, params) {
   const { armLen = 140, bodySize = 60 } = params;
@@ -885,6 +1151,70 @@ export const ROBOTS = {
     paramDefs: [
       { label: 'Arm Length',  key: 'armLen',   min: 80,  max: 220, step: 10, unit: 'mm' },
       { label: 'Body Size',   key: 'bodySize', min: 40,  max: 100, step: 5,  unit: 'mm' },
+    ],
+    ikSupported: false,
+  },
+
+  dexarm: {
+    name: 'Dexterous Bimanual Arm',
+    builder: buildDexArm,
+    fk: dexArmFK,
+    // 20 shared joints — applied symmetrically to both arms
+    joints: [
+      // [0] Shoulder Pitch  [1] Shoulder Yaw
+      0, 0,
+      // [2] Elbow Flex — positive = bends forearm DOWN from horizontal T-pose
+      Math.PI * 5 / 12,   // ~75° → forearms hanging naturally
+      // [3] Wrist Flex  [4] Wrist Rotation
+      0, 0,
+      // [5-7] Thumb: Base / Mid / Tip
+      Math.PI / 12, Math.PI / 16, 0,
+      // [8-10] Index: Base / Mid / Tip
+      0, Math.PI / 20, 0,
+      // [11-13] Middle: Base / Mid / Tip
+      0, Math.PI / 20, 0,
+      // [14-16] Ring: Base / Mid / Tip
+      0, Math.PI / 20, 0,
+      // [17-19] Pinky: Base / Mid / Tip
+      0, Math.PI / 20, 0,
+    ],
+    jointNames: [
+      'Shoulder Pitch', 'Shoulder Yaw',
+      'Elbow Flex',
+      'Wrist Flex', 'Wrist Rotation',
+      'Thumb Base', 'Thumb Mid', 'Thumb Tip',
+      'Index Base', 'Index Mid', 'Index Tip',
+      'Middle Base', 'Middle Mid', 'Middle Tip',
+      'Ring Base', 'Ring Mid', 'Ring Tip',
+      'Pinky Base', 'Pinky Mid', 'Pinky Tip',
+    ],
+    jointLimits: [
+      { min: -60,  max: 60,  step: 1, isAngle: true },  // Shoulder Pitch
+      { min: -80,  max: 80,  step: 1, isAngle: true },  // Shoulder Yaw
+      { min: 0,    max: 145, step: 1, isAngle: true },  // Elbow Flex
+      { min: -60,  max: 60,  step: 1, isAngle: true },  // Wrist Flex
+      { min: -90,  max: 90,  step: 1, isAngle: true },  // Wrist Rotation
+      { min: -40,  max: 80,  step: 1, isAngle: true },  // Thumb Base
+      { min: 0,    max: 90,  step: 1, isAngle: true },  // Thumb Mid
+      { min: 0,    max: 80,  step: 1, isAngle: true },  // Thumb Tip
+      { min: -10,  max: 90,  step: 1, isAngle: true },  // Index Base
+      { min: 0,    max: 110, step: 1, isAngle: true },  // Index Mid
+      { min: 0,    max: 90,  step: 1, isAngle: true },  // Index Tip
+      { min: -10,  max: 90,  step: 1, isAngle: true },  // Middle Base
+      { min: 0,    max: 110, step: 1, isAngle: true },  // Middle Mid
+      { min: 0,    max: 90,  step: 1, isAngle: true },  // Middle Tip
+      { min: -10,  max: 90,  step: 1, isAngle: true },  // Ring Base
+      { min: 0,    max: 110, step: 1, isAngle: true },  // Ring Mid
+      { min: 0,    max: 90,  step: 1, isAngle: true },  // Ring Tip
+      { min: -10,  max: 90,  step: 1, isAngle: true },  // Pinky Base
+      { min: 0,    max: 110, step: 1, isAngle: true },  // Pinky Mid
+      { min: 0,    max: 90,  step: 1, isAngle: true },  // Pinky Tip
+    ],
+    params: { upperArmLen: 120, forearmLen: 110, palmLen: 50 },
+    paramDefs: [
+      { label: 'Upper Arm', key: 'upperArmLen', min: 80,  max: 180, step: 5, unit: 'mm' },
+      { label: 'Forearm',   key: 'forearmLen',  min: 70,  max: 160, step: 5, unit: 'mm' },
+      { label: 'Palm',      key: 'palmLen',     min: 35,  max: 80,  step: 5, unit: 'mm' },
     ],
     ikSupported: false,
   },
