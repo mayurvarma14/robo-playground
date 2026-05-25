@@ -11,7 +11,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 // ─────────────────────────────────────────────────────────────
 const state = {
   activeRobot: 'arm',
-  theme: localStorage.getItem('robosim-theme') || 'dark',
+  theme: localStorage.getItem('robo-playground-theme') || 'dark',
   wireframe: false,
   sequence: {
     frames: [],
@@ -67,7 +67,7 @@ function buildAndShowRobot(key) {
 function applyTheme(theme) {
   state.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('robosim-theme', theme);
+  localStorage.setItem('robo-playground-theme', theme);
   viewport.setTheme(theme);
 
   const icon = document.getElementById('theme-icon');

@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🤖 RoboSim — Advanced Robotics Simulator
+# 🤖 Robo Playground — Advanced Robotics Simulator
 
 **A browser-based, zero-install robotics simulation platform for students, hobbyists, and engineers.**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20App-3b82f6?style=for-the-badge&logo=globe)](https://mayurvarma14.github.io/robot-simulation-app)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20App-3b82f6?style=for-the-badge&logo=globe)](https://mayurvarma14.github.io/robo-playground)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Three.js](https://img.shields.io/badge/Three.js-0.160-black?style=for-the-badge&logo=three.js)](https://threejs.org)
 [![No Build Required](https://img.shields.io/badge/Build-None%20Required-orange?style=for-the-badge)]()
@@ -15,9 +15,9 @@
 
 ---
 
-## ✨ What is RoboSim?
+## ✨ What is Robo Playground?
 
-RoboSim is a **fully client-side** robotics simulation environment built with pure HTML, CSS, and Three.js — no frameworks, no build steps, no installs. It was built with one goal: give students and beginners a **realistic, hands-on way to explore robotics** without needing expensive hardware or complex software.
+Robo Playground is a **fully client-side** robotics simulation environment built with pure HTML, CSS, and Three.js — no frameworks, no build steps, no installs. It was built with one goal: give students and beginners a **realistic, hands-on way to explore robotics** without needing expensive hardware or complex software.
 
 Every robot model is **procedurally generated with accurate proportions**, uses **Physically-Based Rendering (PBR) materials**, and can be **exported as a print-ready STL file** compatible with any 3D slicer (Cura, PrusaSlicer, Bambu Studio).
 
@@ -89,7 +89,7 @@ Fork this repo, go to **Settings → Pages**, set the source to `main` branch, r
 The entire app is ~2,500 lines of plain JavaScript split into 4 focused modules:
 
 ```
-robot-simulation-app/
+robo-playground/
 ├── index.html          # App shell, layout, UI markup
 ├── css/
 │   └── styles.css      # Full design system (CSS variables, dark/light modes)
@@ -131,7 +131,7 @@ Uses Three.js's built-in `STLExporter` to write binary STL. The mesh hierarchy i
 
 ## 📚 Educational Use
 
-RoboSim was designed with STEM education in mind:
+Robo Playground was designed with STEM education in mind:
 
 - **No coding required** — students can explore immediately
 - **No hardware cost** — runs on any laptop or Chromebook
