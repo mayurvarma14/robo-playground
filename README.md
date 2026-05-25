@@ -13,6 +13,12 @@
 
 </div>
 
+<br/>
+<div align="center">
+  <img src="ui-showcase.png" alt="Robo Playground UI" width="80%">
+</div>
+<br/>
+
 ---
 
 ## ✨ What is Robo Playground?
