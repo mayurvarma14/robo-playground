@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoboSim — Advanced Robotics Simulator</title>
+  <meta name="description" content="A hyper-realistic, beginner-friendly robotics simulation platform for students. Explore, control and 3D print robots.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== HEADER ===== -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo">
+          <div class="logo-icon"><i class="fa-solid fa-robot"></i></div>
+          <div class="logo-text">
+            <span class="logo-title">RoboSim</span>
+            <span class="logo-sub">Advanced Robotics Simulator</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="status-bar">
+          <div class="status-pill active" id="status-simulation">
+            <span class="status-dot"></span> Simulation Active
+          </div>
+          <div class="status-pill" id="status-ik">
+            <span class="status-dot"></span> <span id="ik-status-text">IK Idle</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn" id="btn-theme" title="Toggle Theme">
+          <i class="fa-solid fa-sun" id="theme-icon"></i>
+        </button>
+        <button class="icon-btn" id="btn-help" title="Help">
+          <i class="fa-solid fa-circle-question"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- ===== MAIN LAYOUT ===== -->
+    <div id="workspace">
+
+      <!-- LEFT SIDEBAR: Robot picker -->
+      <aside id="robot-picker">
+        <div class="sidebar-section-title">Select Robot</div>
+        <nav id="robot-list">
+          <button class="robot-card active" data-robot="arm" id="card-arm">
+            <div class="robot-card-icon">🦾</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">6-DOF Robotic Arm</div>
+              <div class="robot-card-desc">Industrial cobot • 6 joints</div>
+            </div>
+          </button>
+          <button class="robot-card" data-robot="humanoid" id="card-humanoid">
+            <div class="robot-card-icon">🤖</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">Humanoid Robot</div>
+              <div class="robot-card-desc">Optimus-inspired • 28 DOF</div>
+            </div>
+          </button>
+          <button class="robot-card" data-robot="quadruped" id="card-quadruped">
+            <div class="robot-card-icon">🐕</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">Quadruped</div>
+              <div class="robot-card-desc">Spot-inspired • 12 joints</div>
+            </div>
+          </button>
+          <button class="robot-card" data-robot="rover" id="card-rover">
+            <div class="robot-card-icon">🛸</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">Mars Rover</div>
+              <div class="robot-card-desc">6-wheel rocker-bogie</div>
+            </div>
+          </button>
+          <button class="robot-card" data-robot="scara" id="card-scara">
+            <div class="robot-card-icon">⚙️</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">SCARA Arm</div>
+              <div class="robot-card-desc">High-speed pick & place</div>
+            </div>
+          </button>
+          <button class="robot-card" data-robot="drone" id="card-drone">
+            <div class="robot-card-icon">🚁</div>
+            <div class="robot-card-info">
+              <div class="robot-card-name">Quadcopter Drone</div>
+              <div class="robot-card-desc">Aerial robot • 4 rotors</div>
+            </div>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <i class="fa-solid fa-graduation-cap"></i> Designed for STEM education
+        </div>
+      </aside>
+
+      <!-- CENTER: 3D Viewport -->
+      <section id="viewport-wrap">
+        <!-- Toolbar row above canvas -->
+        <div id="viewport-toolbar">
+          <div class="toolbar-group">
+            <button class="toolbar-btn active" id="btn-view-iso" title="Isometric View">
+              <i class="fa-solid fa-cube"></i>
+            </button>
+            <button class="toolbar-btn" id="btn-view-front" title="Front View">Front</button>
+            <button class="toolbar-btn" id="btn-view-side" title="Side View">Side</button>
+            <button class="toolbar-btn" id="btn-view-top" title="Top View">Top</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn active" id="btn-grid" title="Toggle Grid">
+              <i class="fa-solid fa-border-all"></i> Grid
+            </button>
+            <button class="toolbar-btn active" id="btn-axes" title="Toggle Axes">
+              <i class="fa-solid fa-arrows-to-dot"></i> Axes
+            </button>
+            <button class="toolbar-btn" id="btn-wireframe" title="Wireframe">
+              <i class="fa-solid fa-vector-square"></i> Wire
+            </button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" id="btn-reset-cam" title="Reset Camera">
+              <i class="fa-solid fa-crosshairs"></i> Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- The Three.js canvas -->
+        <div id="canvas-container"></div>
+
+        <!-- Floating telemetry -->
+        <div id="telemetry-overlay">
+          <div class="tel-title">End Effector</div>
+          <div class="tel-grid">
+            <span class="tel-label">X</span><span class="tel-val" id="tel-x">0.0</span><span class="tel-unit">mm</span>
+            <span class="tel-label">Y</span><span class="tel-val" id="tel-y">0.0</span><span class="tel-unit">mm</span>
+            <span class="tel-label">Z</span><span class="tel-val" id="tel-z">0.0</span><span class="tel-unit">mm</span>
+          </div>
+        </div>
+
+        <!-- Robot name badge -->
+        <div id="robot-name-badge">
+          <span id="active-robot-name">6-DOF Robotic Arm</span>
+        </div>
+      </section>
+
+      <!-- RIGHT PANEL: Controls -->
+      <aside id="control-panel">
+        <div class="panel-tabs">
+          <button class="panel-tab active" data-tab="joints" id="tab-joints">
+            <i class="fa-solid fa-sliders"></i> Joints
+          </button>
+          <button class="panel-tab" data-tab="config" id="tab-config">
+            <i class="fa-solid fa-gears"></i> Config
+          </button>
+          <button class="panel-tab" data-tab="export" id="tab-export">
+            <i class="fa-solid fa-file-export"></i> Export
+          </button>
+        </div>
+
+        <div class="panel-body">
+          <!-- JOINTS TAB -->
+          <div class="tab-pane active" id="pane-joints">
+            <div class="pane-section">
+              <div class="section-header">
+                <span class="section-title">Joint Control (FK)</span>
+                <button class="mini-btn" id="btn-reset-pose">Reset</button>
+              </div>
+              <div id="joint-controls-container"></div>
+            </div>
+
+            <div class="pane-section">
+              <div class="section-header">
+                <span class="section-title">Inverse Kinematics</span>
+              </div>
+              <div class="ik-grid">
+                <div class="ik-field">
+                  <label for="ik-x">Target X</label>
+                  <input type="number" id="ik-x" value="150" step="5">
+                  <span class="ik-unit">mm</span>
+                </div>
+                <div class="ik-field">
+                  <label for="ik-y">Target Y</label>
+                  <input type="number" id="ik-y" value="150" step="5">
+                  <span class="ik-unit">mm</span>
+                </div>
+                <div class="ik-field">
+                  <label for="ik-z">Target Z</label>
+                  <input type="number" id="ik-z" value="0" step="5">
+                  <span class="ik-unit">mm</span>
+                </div>
+              </div>
+              <button class="action-btn primary" id="btn-ik-solve">
+                <i class="fa-solid fa-crosshairs"></i> Solve IK
+              </button>
+              <div class="ik-warning" id="ik-warning" style="display:none">
+                <i class="fa-solid fa-triangle-exclamation"></i> Target out of workspace
+              </div>
+            </div>
+          </div>
+
+          <!-- CONFIG TAB -->
+          <div class="tab-pane" id="pane-config">
+            <div class="pane-section">
+              <div class="section-header"><span class="section-title">Actuator Type</span></div>
+              <select class="styled-select" id="motor-select">
+                <option value="sg90">SG90 Micro Servo (9g)</option>
+                <option value="mg996r">MG996R High-Torque Servo</option>
+                <option value="nema17">NEMA 17 Stepper Motor</option>
+              </select>
+              <div class="help-text" id="motor-desc">22.8×12.2mm servo with mounting flanges</div>
+            </div>
+            <div class="pane-section">
+              <div class="section-header"><span class="section-title">Dimensions</span></div>
+              <div id="param-controls-container"></div>
+            </div>
+            <div class="pane-section">
+              <div class="section-header"><span class="section-title">Print Tolerances</span></div>
+              <div class="param-row">
+                <label>Bolt Hole Ø <span class="param-val" id="val-bolt">3.2mm</span></label>
+                <input type="range" id="bolt-slider" min="2.0" max="6.0" step="0.1" value="3.2">
+              </div>
+              <div class="param-row">
+                <label>Wall Thickness <span class="param-val" id="val-wall">3.5mm</span></label>
+                <input type="range" id="wall-slider" min="1.5" max="8.0" step="0.5" value="3.5">
+              </div>
+            </div>
+            <div class="pane-section">
+              <div class="section-header"><span class="section-title">Lighting</span></div>
+              <div class="param-row">
+                <label>Brightness <span class="param-val" id="val-brightness">1.0</span></label>
+                <input type="range" id="brightness-slider" min="0.2" max="3.0" step="0.1" value="1.0">
+              </div>
+            </div>
+          </div>
+
+          <!-- EXPORT TAB -->
+          <div class="tab-pane" id="pane-export">
+            <div class="pane-section">
+              <div class="section-header"><span class="section-title">Export STL Parts</span></div>
+              <p class="help-text">Download water-tight STL files, ready for Cura, PrusaSlicer, or Bambu Studio.</p>
+              <div id="export-parts-list"></div>
+            </div>
+            <div class="pane-section">
+              <button class="action-btn success" id="btn-export-all">
+                <i class="fa-solid fa-download"></i> Export Full Assembly
+              </button>
+              <p class="help-text mt-4">Exports all parts in current pose for validation in CAD software.</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- BOTTOM: Pose Sequencer -->
+    <footer id="sequencer">
+      <div class="seq-info">
+        <i class="fa-solid fa-timeline"></i>
+        <div>
+          <div class="seq-title">Pose Sequencer</div>
+          <div class="seq-sub">Record and replay joint poses</div>
+        </div>
+      </div>
+      <div class="seq-controls">
+        <button class="seq-btn" id="seq-prev" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+        <button class="seq-btn primary" id="seq-play" title="Play/Pause"><i class="fa-solid fa-play" id="seq-play-icon"></i></button>
+        <button class="seq-btn" id="seq-next" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+        <div class="seq-sep"></div>
+        <button class="seq-btn accent" id="seq-record" title="Record Pose"><i class="fa-solid fa-circle-dot"></i> Record</button>
+        <button class="seq-btn danger" id="seq-clear" title="Clear All"><i class="fa-solid fa-trash"></i></button>
+        <div class="seq-sep"></div>
+        <label class="seq-label">Speed</label>
+        <input type="range" id="seq-speed" min="0.1" max="3.0" step="0.1" value="1.0" class="seq-speed-input">
+        <span id="seq-speed-val" class="seq-speed-val">1.0×</span>
+      </div>
+      <div id="seq-timeline">
+        <div class="seq-empty" id="seq-empty-msg">No poses recorded. Adjust joints and click Record.</div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Three.js via importmap -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
