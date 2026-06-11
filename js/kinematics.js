@@ -280,3 +280,68 @@ export class DHChain {
     return { q: best.q, converged: false, iterations: opts.maxIter ?? 100, posErr: best.posErr };
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// ANALYTICAL SOLVERS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Planar 2R IK. Link1 along +x at q1=0; x = l1·c1 + l2·c12, y = l1·s1 + l2·s12.
+ * elbow: +1 (elbow-up / positive q2) or -1.
+ */
+export function twoLinkIK(x, y, l1, l2, elbow = -1) {
+  const d2 = x * x + y * y;
+  const d = Math.sqrt(d2);
+  const reachable = d <= l1 + l2 + 1e-9 && d >= Math.abs(l1 - l2) - 1e-9;
+  const c2 = Math.max(-1, Math.min(1, (d2 - l1 * l1 - l2 * l2) / (2 * l1 * l2)));
+  const q2 = elbow * Math.acos(c2);
+  const q1 = Math.atan2(y, x) - Math.atan2(l2 * Math.sin(q2), l1 + l2 * Math.cos(q2));
+  return { q1, q2, reachable };
+}
+
+export function twoLinkFK(q1, q2, l1, l2) {
+  return {
+    x: l1 * Math.cos(q1) + l2 * Math.cos(q1 + q2),
+    y: l1 * Math.sin(q1) + l2 * Math.sin(q1 + q2),
+  };
+}
+
+/**
+ * SCARA planar IK in Three.js world XZ plane (joints rotate about world Y).
+ * Mesh convention: RotY(q)·(l,0,0) = (l·cos q, 0, −l·sin q) ⇒ planar v = −z.
+ */
+export function scaraFK(q1, q2, l1, l2) {
+  const p = twoLinkFK(q1, q2, l1, l2);
+  return { x: p.x, z: -p.y };
+}
+
+export function scaraIK(x, z, l1, l2, elbow = 1) {
+  return twoLinkIK(x, -z, l1, l2, elbow);
+}
+
+/**
+ * Quadruped 3-DOF leg IK, leg-frame coordinates (origin at hip yaw axis,
+ * Y up, X lateral outward-positive for right legs, Z forward).
+ * Mesh chain: RotY(q0) → translate (side·coxa, 0, 0) → RotX(q1) → femur −Y
+ *           → RotX(q2) → tibia −Y.
+ * side: +1 right legs (x > 0), −1 left legs.
+ */
+export function legFK(q0, q1, q2, coxa, femur, tibia, side) {
+  const c = side * coxa;
+  const fy = -(femur * Math.cos(q1) + tibia * Math.cos(q1 + q2));
+  const fz = -(femur * Math.sin(q1) + tibia * Math.sin(q1 + q2));
+  const c0 = Math.cos(q0), s0 = Math.sin(q0);
+  return { x: c * c0 + fz * s0, y: fy, z: -c * s0 + fz * c0 };
+}
+
+export function legIK(x, y, z, coxa, femur, tibia, side) {
+  const c = side * coxa;
+  const R = Math.hypot(x, z);
+  const reachableYaw = R >= Math.abs(c) - 1e-9;
+  const fzMag = Math.sqrt(Math.max(0, R * R - c * c));
+  const fz = (z >= 0 ? 1 : -1) * fzMag;
+  const q0 = Math.atan2(fz, c) - Math.atan2(z, x);
+  // planar: w = −y (down-positive reach), u = −fz
+  const { q1, q2, reachable } = twoLinkIK(-y, -fz, femur, tibia, -1);
+  return { q0, q1, q2, reachable: reachable && reachableYaw };
+}

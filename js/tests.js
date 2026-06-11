@@ -156,6 +156,57 @@ test('solvePositionIK on generic chain', () => {
   approxArr(fk(r.q), target, 0.1);
 });
 
+// ── Task 4 tests: analytical solvers
+test('twoLink roundtrip both elbows', () => {
+  for (const elbow of [1, -1]) {
+    const t = twoLinkFKHelper(0.7, elbow * -1.1);
+    const r = K.twoLinkIK(t.x, t.y, 100, 80, elbow * -1 > 0 ? 1 : -1);
+    const back = K.twoLinkFK(r.q1, r.q2, 100, 80);
+    approx(back.x, t.x, 1e-6); approx(back.y, t.y, 1e-6);
+  }
+  function twoLinkFKHelper(a, b) { return K.twoLinkFK(a, b, 100, 80); }
+});
+
+test('twoLink unreachable flagged + clamped finite', () => {
+  const r = K.twoLinkIK(500, 0, 100, 80);
+  if (r.reachable) throw new Error('should be unreachable');
+  if (!Number.isFinite(r.q1) || !Number.isFinite(r.q2)) throw new Error('NaN');
+});
+
+test('scara analytical agrees with FK', () => {
+  const q1 = 0.5, q2 = -0.8, l1 = 150, l2 = 130;
+  const p = K.scaraFK(q1, q2, l1, l2);
+  const r = K.scaraIK(p.x, p.z, l1, l2, -1);
+  const back = K.scaraFK(r.q1, r.q2, l1, l2);
+  approx(back.x, p.x, 1e-6); approx(back.z, p.z, 1e-6);
+});
+
+test('scara analytical agrees with numerical DLS', () => {
+  // numerical solution of same planar chain must land on same point
+  const l1 = 150, l2 = 130;
+  const target = K.scaraFK(0.4, 0.7, l1, l2);
+  const a = K.scaraIK(target.x, target.z, l1, l2, 1);
+  const fk = (q) => { const p = K.scaraFK(q[0], q[1], l1, l2); return [p.x, 0, p.z]; };
+  const n = K.solvePositionIK(fk, [0.1, 0.2], [target.x, 0, target.z]);
+  if (!n.converged) throw new Error('numeric failed');
+  const pa = K.scaraFK(a.q1, a.q2, l1, l2);
+  const pn = K.scaraFK(n.q[0], n.q[1], l1, l2);
+  approx(pa.x, pn.x, 0.2); approx(pa.z, pn.z, 0.2);
+});
+
+test('leg IK roundtrip all 4 leg signs', () => {
+  const C = 40, F = 80, T = 87;
+  for (const side of [1, -1]) {
+    for (const q of [[0.2, 0.4, -1.0], [-0.3, 0.1, -0.6]]) {
+      const p = K.legFK(q[0], q[1], q[2], C, F, T, side);
+      const r = K.legIK(p.x, p.y, p.z, C, F, T, side);
+      if (!r.reachable) throw new Error('should be reachable');
+      const back = K.legFK(r.q0, r.q1, r.q2, C, F, T, side);
+      approx(back.x, p.x, 1e-4, 'x'); approx(back.y, p.y, 1e-4, 'y'); approx(back.z, p.z, 1e-4, 'z');
+    }
+  }
+});
+
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
 const summary = `TESTS: ${passed} passed, ${failed} failed`;
 console.log(summary);
