@@ -345,3 +345,39 @@ export function legIK(x, y, z, coxa, femur, tibia, side) {
   const { q1, q2, reachable } = twoLinkIK(-y, -fz, femur, tibia, -1);
   return { q0, q1, q2, reachable: reachable && reachableYaw };
 }
+
+// ─────────────────────────────────────────────────────────────
+// MOBILE ROBOTS
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 4-wheel-steer Ackermann (Perseverance-style: 4 corner wheels steer,
+ * middle pair fixed). radius: signed turn radius to vehicle centre,
+ * +ve = left turn, Infinity = straight. wheelbase = front↔rear corner
+ * distance, track = left↔right distance. Returns radians per corner.
+ */
+export function ackermann(radius, wheelbase, track) {
+  if (!Number.isFinite(radius) || Math.abs(radius) < track / 2 + 1)
+    return { fl: 0, fr: 0, rl: 0, rr: 0 };
+  const h = wheelbase / 2;
+  const fl = Math.atan(h / (radius - track / 2));
+  const fr = Math.atan(h / (radius + track / 2));
+  return { fl, fr, rl: -fl, rr: -fr };
+}
+
+/**
+ * X-configuration quad mixer. Inputs: thrust 0..1, roll/pitch/yaw −1..1.
+ * Conventions: +roll = roll right, +pitch = nose down (forward),
+ * +yaw = clockwise from above. Props: FR & BL spin CCW, FL & BR CW.
+ * Returns motor outputs [fr, fl, bl, br] clamped 0..1.
+ */
+export function quadMix(thrust, roll, pitch, yaw) {
+  const k = 0.25; // control authority per axis
+  const m = [
+    thrust - k * roll - k * pitch + k * yaw, // FR
+    thrust + k * roll - k * pitch - k * yaw, // FL
+    thrust + k * roll + k * pitch + k * yaw, // BL
+    thrust - k * roll + k * pitch - k * yaw, // BR
+  ];
+  return m.map(v => Math.max(0, Math.min(1, v)));
+}

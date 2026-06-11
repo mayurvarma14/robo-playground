@@ -207,6 +207,42 @@ test('leg IK roundtrip all 4 leg signs', () => {
   }
 });
 
+// ── Task 5 tests: ackermann + mixer
+test('ackermann straight = zero angles', () => {
+  const a = K.ackermann(Infinity, 300, 180);
+  approxArr([a.fl, a.fr, a.rl, a.rr], [0, 0, 0, 0]);
+});
+
+test('ackermann left turn: inner (left) wheel steers more', () => {
+  const a = K.ackermann(400, 300, 180);
+  if (!(a.fl > a.fr && a.fl > 0)) throw new Error(`fl=${a.fl} fr=${a.fr}`);
+  approx(a.rl, -a.fl, 1e-9); approx(a.rr, -a.fr, 1e-9);
+});
+
+test('quadMix pure thrust = equal motors', () => {
+  const m = K.quadMix(0.6, 0, 0, 0);
+  approxArr(m, [0.6, 0.6, 0.6, 0.6]);
+});
+
+test('quadMix roll right: left motors faster', () => {
+  const [fr, fl, bl, br] = K.quadMix(0.5, 1, 0, 0);
+  if (!(fl > fr && bl > br)) throw new Error('roll mixing wrong');
+});
+
+test('quadMix pitch forward: rear motors faster', () => {
+  const [fr, fl, bl, br] = K.quadMix(0.5, 0, 1, 0);
+  if (!(bl > fl && br > fr)) throw new Error('pitch mixing wrong');
+});
+
+test('quadMix yaw cw: CCW props faster', () => {
+  const [fr, fl, bl, br] = K.quadMix(0.5, 0, 0, 1);
+  if (!(fr > fl && bl > br)) throw new Error('yaw mixing wrong');
+});
+
+test('quadMix clamps 0..1', () => {
+  K.quadMix(1, 1, 1, 1).forEach(v => { if (v < 0 || v > 1) throw new Error('unclamped'); });
+});
+
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
 const summary = `TESTS: ${passed} passed, ${failed} failed`;
 console.log(summary);
