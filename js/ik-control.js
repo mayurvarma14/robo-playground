@@ -52,6 +52,9 @@ export class IKController {
     viewport.detachGizmo();
     viewport.clearTrace();
     this.target.visible = false;
+    this.solver = null;        // drop the previous robot's solver closure
+    this.solvePending = false; // and any solve queued during the switch
+    this.fieldLabels = null;
     this._setWarning(false);
     document.getElementById('btn-ik-mode').style.display = 'none';
     this.mode = cfg.kinematics?.type ?? null;
@@ -59,7 +62,10 @@ export class IKController {
     if (this.mode === 'dh') this._activateArm(cfg, host);
     else if (this.mode === 'scara') this._activateScara(cfg, host);
     else if (this.mode === 'numeric-arms') this._activateDexarm(cfg, host);
-    else host.innerHTML = '<p class="help-text">IK target control for this robot is on the dedicated panel below.</p>';
+    else {
+      host.innerHTML = '<p class="help-text">IK target control for this robot is on the dedicated panel below.</p>';
+      document.getElementById('ik-status-text').textContent = 'IK Idle';
+    }
   }
 
   _activateArm(cfg, host) {
@@ -69,16 +75,28 @@ export class IKController {
     this._buildPoseFields(['X', 'Y', 'Z', 'Roll', 'Pitch', 'Yaw']);
     document.getElementById('btn-ik-mode').style.display = '';
 
-    // place target at current EE
+    // limits in radians so the solver clamps to what the sliders allow
+    const limits = cfg.jointLimits.slice(0, 6).map(L => ({ min: L.min * DEG, max: L.max * DEG }));
+    const chain = new DHChain((q) => cfg.kinematics.rows(q, cfg.params), limits);
+
+    // place target at the current EE pose (position AND orientation)
     const f = cfg.fk(cfg.joints, cfg.params);
     this.target.position.set(f.x, f.y, f.z);
-    this.target.rotation.set(0, 0, 0);
+    const { ee } = chain.fk(cfg.joints.slice(0, 6));
+    const e0 = ee;
+    const Rdh0 = new THREE.Matrix4().set(
+      e0[0][0], e0[0][1], e0[0][2], 0,
+      e0[1][0], e0[1][1], e0[1][2], 0,
+      e0[2][0], e0[2][1], e0[2][2], 0,
+      0, 0, 0, 1,
+    );
+    const Rw0 = C.clone().multiply(Rdh0).multiply(CT);
+    this.target.quaternion.setFromRotationMatrix(Rw0);
     this.target.visible = true;
     this.deps.viewport.attachGizmo(this.target);
     this._writeFieldsFromTarget();
 
     this.solver = (t) => {
-      const chain = new DHChain((q) => cfg.kinematics.rows(q, cfg.params));
       const dhPos = worldToDH([t.position.x, t.position.y, t.position.z]);
       // orientation: R_dh = Cᵀ · R_world · C
       const Rw = new THREE.Matrix4().makeRotationFromQuaternion(t.quaternion);
@@ -89,7 +107,10 @@ export class IKController {
         [e[1], e[5], e[9]],
         [e[2], e[6], e[10]],
       ];
-      const r = chain.solveIK(cfg.joints.slice(0, 6), dhPos, targetRot);
+      // gizmo tracking re-solves from the last pose each frame; holding the
+      // target orientation while position moves needs more iterations than
+      // the solver default to settle both error terms
+      const r = chain.solveIK(cfg.joints.slice(0, 6), dhPos, targetRot, { maxIter: 300 });
       for (let i = 0; i < 6; i++) cfg.joints[i] = r.q[i];
       return r.converged;
     };
@@ -169,7 +190,7 @@ export class IKController {
     grid.innerHTML = labels.map(l => `
       <div class="ik-field">
         <label for="ikf-${l}">${l}</label>
-        <input type="number" id="ikf-${l}" step="${'XYZ'.includes(l) ? 5 : 5}" value="0">
+        <input type="number" id="ikf-${l}" step="${'XYZ'.includes(l) ? 5 : 2}" value="0">
         <span class="ik-unit">${'XYZ'.includes(l) ? 'mm' : '°'}</span>
       </div>`).join('');
     labels.forEach(l => {
