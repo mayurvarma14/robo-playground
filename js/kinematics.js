@@ -241,10 +241,32 @@ export class DHChain {
       const tr = Re[0][0] + Re[1][1] + Re[2][2];
       const angle = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
       if (angle > 1e-9) {
-        const f = angle / (2 * Math.sin(angle)) * rotWeight;
-        e[3] = (Re[2][1] - Re[1][2]) * f;
-        e[4] = (Re[0][2] - Re[2][0]) * f;
-        e[5] = (Re[1][0] - Re[0][1]) * f;
+        let v;
+        if (Math.sin(angle) > 1e-6) {
+          const f = angle / (2 * Math.sin(angle));
+          v = [
+            (Re[2][1] - Re[1][2]) * f,
+            (Re[0][2] - Re[2][0]) * f,
+            (Re[1][0] - Re[0][1]) * f,
+          ];
+        } else {
+          // angle ≈ π: skew part vanishes, so recover the axis from the
+          // diagonal (R = 2aaᵀ − I), resolving signs off the largest component.
+          const ax = Math.sqrt(Math.max(0, (Re[0][0] + 1) / 2));
+          const ay = Math.sqrt(Math.max(0, (Re[1][1] + 1) / 2));
+          const az = Math.sqrt(Math.max(0, (Re[2][2] + 1) / 2));
+          let a;
+          if (ax >= ay && ax >= az)
+            a = [ax, (Re[0][1] + Re[1][0]) / (4 * ax), (Re[0][2] + Re[2][0]) / (4 * ax)];
+          else if (ay >= az)
+            a = [(Re[0][1] + Re[1][0]) / (4 * ay), ay, (Re[1][2] + Re[2][1]) / (4 * ay)];
+          else
+            a = [(Re[0][2] + Re[2][0]) / (4 * az), (Re[1][2] + Re[2][1]) / (4 * az), az];
+          v = [a[0] * angle, a[1] * angle, a[2] * angle];
+        }
+        e[3] = v[0] * rotWeight;
+        e[4] = v[1] * rotWeight;
+        e[5] = v[2] * rotWeight;
       }
     }
     return e;
@@ -277,7 +299,7 @@ export class DHChain {
         }
       }
     }
-    return { q: best.q, converged: false, iterations: opts.maxIter ?? 100, posErr: best.posErr };
+    return { q: best.q, converged: false, iterations: maxIter, posErr: best.posErr };
   }
 }
 
@@ -357,8 +379,12 @@ export function legIK(x, y, z, coxa, femur, tibia, side) {
  * distance, track = left↔right distance. Returns radians per corner.
  */
 export function ackermann(radius, wheelbase, track) {
-  if (!Number.isFinite(radius) || Math.abs(radius) < track / 2 + 1)
-    return { fl: 0, fr: 0, rl: 0, rr: 0 };
+  if (!Number.isFinite(radius)) return { fl: 0, fr: 0, rl: 0, rr: 0 };
+  // tightest turn keeps the turn centre just outside the inner wheels;
+  // clamping (vs snapping to straight) keeps steer angles continuous
+  const minRadius = track / 2 + 1;
+  if (Math.abs(radius) < minRadius)
+    radius = (radius < 0 ? -1 : 1) * minRadius;
   const h = wheelbase / 2;
   const fl = Math.atan(h / (radius - track / 2));
   const fr = Math.atan(h / (radius + track / 2));

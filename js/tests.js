@@ -100,7 +100,8 @@ test('arm FK base yaw moves EE in DH -y', () => {
 test('manipulability: stretched pose is near-singular', () => {
   const wSing = armChain.manipulability([0, 0, 0, 0, 0, 0]);     // fully extended
   const wGood = armChain.manipulability([0, 40*K.DEG, -70*K.DEG, 20*K.DEG, 30*K.DEG, 0]);
-  if (!(wGood > wSing)) throw new Error(`expected wGood ${wGood} > wSing ${wSing}`);
+  if (!(wSing < 1e-3)) throw new Error(`expected near-zero wSing, got ${wSing}`);
+  if (!(wGood > 1)) throw new Error(`expected healthy wGood, got ${wGood}`);
 });
 
 // ── Task 3 tests: DLS IK
@@ -143,6 +144,20 @@ test('IK respects joint limits', () => {
   });
 });
 
+test('poseError finite and nonzero at 180deg rotation error', () => {
+  const { ee } = armChain.fk([0, 0, 0, 0, 0, 0]);
+  // target rotated pi about world Z relative to current EE orientation
+  const flipped = [
+    [-ee[0][0], -ee[0][1], ee[0][2]],
+    [-ee[1][0], -ee[1][1], ee[1][2]],
+    [-ee[2][0], -ee[2][1], ee[2][2]],
+  ];
+  const e = armChain.poseError(ee, [ee[0][3], ee[1][3], ee[2][3]], flipped, 20);
+  e.forEach(v => { if (!Number.isFinite(v)) throw new Error('non-finite error'); });
+  const mag = Math.hypot(e[3], e[4], e[5]);
+  approx(mag, Math.PI * 20, 1e-6, 'rot error magnitude');
+});
+
 test('solvePositionIK on generic chain', () => {
   // simple 2-link planar chain as fk function
   const fk = (q) => [
@@ -159,12 +174,12 @@ test('solvePositionIK on generic chain', () => {
 // ── Task 4 tests: analytical solvers
 test('twoLink roundtrip both elbows', () => {
   for (const elbow of [1, -1]) {
-    const t = twoLinkFKHelper(0.7, elbow * -1.1);
-    const r = K.twoLinkIK(t.x, t.y, 100, 80, elbow * -1 > 0 ? 1 : -1);
+    const t = K.twoLinkFK(0.7, elbow * 1.1, 100, 80);
+    const r = K.twoLinkIK(t.x, t.y, 100, 80, elbow);
+    if (Math.sign(r.q2) !== elbow) throw new Error(`elbow ${elbow}: q2=${r.q2} has wrong sign`);
     const back = K.twoLinkFK(r.q1, r.q2, 100, 80);
     approx(back.x, t.x, 1e-6); approx(back.y, t.y, 1e-6);
   }
-  function twoLinkFKHelper(a, b) { return K.twoLinkFK(a, b, 100, 80); }
 });
 
 test('twoLink unreachable flagged + clamped finite', () => {
