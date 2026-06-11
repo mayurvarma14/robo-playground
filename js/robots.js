@@ -5,6 +5,9 @@
  */
 import * as THREE from 'three';
 import { MAT } from './materials.js';
+import { DHChain, dhToWorld } from './kinematics.js';
+
+export const ARM_FLANGE = 30;
 
 // ─────────────────────────────────────────────────────────────
 // SHARED GEOMETRY HELPERS
@@ -189,34 +192,53 @@ export function buildArm(joints, params) {
   b3.position.y = l3;
   forearmGroup.add(b3);
 
-  // ── WRIST
+  // ── WRIST 1 (pitch)
   const wristGroup = new THREE.Group();
   wristGroup.position.y = l3;
   wristGroup.rotation.z = joints[3];
   forearmGroup.add(wristGroup);
 
-  const wristLink = roundedLink(l4, 20, 16, MAT.aluminium, 'Wrist Link');
-  wristLink.position.y = l4 / 2;
-  wristGroup.add(wristLink);
-
-  const wristActuator = cyl(12, 12, 20, 20, MAT.chrome, 'Wrist Actuator');
+  const wristActuator = cyl(12, 12, 20, 20, MAT.chrome, 'Wrist 1 Actuator');
   wristActuator.rotation.z = Math.PI / 2;
   wristActuator.position.y = 2;
   wristGroup.add(wristActuator);
 
-  // ── END EFFECTOR / GRIPPER
+  // ── WRIST 2 (roll about the link axis)
+  const rollGroup = new THREE.Group();
+  rollGroup.rotation.y = joints[4];
+  wristGroup.add(rollGroup);
+
+  const wristLink = roundedLink(l4, 20, 16, MAT.aluminium, 'Wrist Link');
+  wristLink.position.y = l4 / 2;
+  rollGroup.add(wristLink);
+
+  const rollRing = bearing(14, 6);
+  rollRing.position.y = l4 * 0.45;
+  rollGroup.add(rollRing);
+
+  // ── WRIST 3 (pitch)
+  const wrist2Group = new THREE.Group();
+  wrist2Group.position.y = l4;
+  wrist2Group.rotation.z = joints[5];
+  rollGroup.add(wrist2Group);
+
+  const wrist2Actuator = cyl(10, 10, 18, 20, MAT.chrome, 'Wrist 3 Actuator');
+  wrist2Actuator.rotation.z = Math.PI / 2;
+  wrist2Group.add(wrist2Actuator);
+
+  // ── FLANGE + GRIPPER (FLANGE = 30 must match the DH table)
   const gripGroup = new THREE.Group();
-  gripGroup.position.y = l4;
-  wristGroup.add(gripGroup);
+  gripGroup.position.y = ARM_FLANGE;
+  wrist2Group.add(gripGroup);
 
   const gripBase = cyl(14, 14, 18, 20, MAT.blackAnodised, 'Gripper Base');
-  gripBase.position.y = 9;
+  gripBase.position.y = -9;
   gripGroup.add(gripBase);
 
-  const clawGap = joints[4] !== undefined ? joints[4] : 18;
+  const clawGap = joints[6] !== undefined ? joints[6] : 18;
   for (let side of [-1, 1]) {
     const claw = new THREE.Group();
-    claw.position.set(side * clawGap / 2, 16, 0);
+    claw.position.set(side * clawGap / 2, 0, 0);
 
     const finger = box(6, 30, 8, MAT.darkSteel, side > 0 ? 'Gripper Finger Right' : 'Gripper Finger Left');
     finger.position.y = 15;
@@ -231,16 +253,22 @@ export function buildArm(joints, params) {
   return root;
 }
 
-// FK helper for arm
+export function armDHRows(q, p) {
+  return [
+    [q[0],                p.l1 + 20, 0,    Math.PI / 2],
+    [q[1] + Math.PI / 2,  0,         p.l2, 0],
+    [q[2],                0,         p.l3, 0],
+    [q[3] + Math.PI / 2,  0,         0,    Math.PI / 2],
+    [q[4],                p.l4,      0,   -Math.PI / 2],
+    [q[5] - Math.PI / 2,  0,         ARM_FLANGE, 0],
+  ];
+}
+
+// FK for telemetry — world (Y-up) coordinates
 export function armFK(joints, params) {
-  const { l1 = 80, l2 = 130, l3 = 110, l4 = 80 } = params;
-  const j = joints;
-  const cos = Math.cos, sin = Math.sin;
-  const sa = j[1], ea = j[1] + j[2], wa = j[1] + j[2] + j[3];
-  const x = (l2 * cos(sa) + l3 * cos(ea) + l4 * cos(wa)) * cos(j[0]);
-  const y = l1 + l2 * sin(sa) + l3 * sin(ea) + l4 * sin(wa) + 20;
-  const z = (l2 * cos(sa) + l3 * cos(ea) + l4 * cos(wa)) * sin(j[0]);
-  return { x: Math.round(x), y: Math.round(y), z: Math.round(z) };
+  const chain = new DHChain((q) => armDHRows(q, params));
+  const [x, y, z] = dhToWorld(chain.eePos(joints.slice(0, 6)));
+  return { x, y, z };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1019,23 +1047,39 @@ export const ROBOTS = {
     name: '6-DOF Robotic Arm',
     builder: buildArm,
     fk: armFK,
-    joints: [0, Math.PI / 6, -Math.PI / 3, -Math.PI / 6, 18],
-    jointNames: ['Base Yaw', 'Shoulder Pitch', 'Elbow Flex', 'Wrist Pitch', 'Gripper Gap'],
+    joints: [0, Math.PI / 6, -Math.PI / 3, -Math.PI / 6, 0, 0, 18],
+    jointNames: [
+      'Base (J1)', 'Shoulder (J2)', 'Elbow (J3)',
+      'Wrist 1 Pitch (J4)', 'Wrist 2 Roll (J5)', 'Wrist 3 Pitch (J6)',
+      'Gripper Gap',
+    ],
     jointLimits: [
-      { min: -180, max: 180, step: 1, isAngle: true },
-      { min: -90,  max: 90,  step: 1, isAngle: true },
-      { min: -135, max: 135, step: 1, isAngle: true },
-      { min: -90,  max: 90,  step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
+      { min: -360, max: 360, step: 1, isAngle: true },
       { min: 8,    max: 45,  step: 1, isAngle: false },
     ],
-    params: { l1: 80, l2: 130, l3: 110, l4: 80 },
+    params: { l1: 81, l2: 213, l3: 196, l4: 67 },
     paramDefs: [
-      { label: 'Base Height',   key: 'l1', min: 50,  max: 150, step: 5,  unit: 'mm' },
-      { label: 'Upper Arm',     key: 'l2', min: 80,  max: 220, step: 5,  unit: 'mm' },
-      { label: 'Forearm',       key: 'l3', min: 60,  max: 180, step: 5,  unit: 'mm' },
-      { label: 'Wrist Link',    key: 'l4', min: 40,  max: 120, step: 5,  unit: 'mm' },
+      { label: 'Base Height (d1)', key: 'l1', min: 50,  max: 150, step: 1, unit: 'mm' },
+      { label: 'Upper Arm (a2)',   key: 'l2', min: 100, max: 280, step: 1, unit: 'mm' },
+      { label: 'Forearm (a3)',     key: 'l3', min: 80,  max: 260, step: 1, unit: 'mm' },
+      { label: 'Wrist (d5)',       key: 'l4', min: 40,  max: 120, step: 1, unit: 'mm' },
     ],
     ikSupported: true,
+    kinematics: {
+      type: 'dh',
+      dof: 6,
+      rows: armDHRows,
+      // UR5e anchor (half scale): d1=162.5, a2=425, a3=392.2, d4=133.3,
+      // d5=99.7, d6=99.6 mm full scale; ±360° joints; 180°/s all joints.
+      anchor: 'Universal Robots UR5e (half scale)',
+      speeds: [180, 180, 180, 180, 180, 180], // deg/s, UR5e max joint speed
+      facts: 'UR5e: 5 kg payload · 850 mm reach · ±360° joints',
+    },
   },
 
   humanoid: {

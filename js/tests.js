@@ -3,6 +3,7 @@
  * Results go to console and a fixed banner.
  */
 import * as K from './kinematics.js';
+import { ROBOTS, armDHRows, ARM_FLANGE } from './robots.js';
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -256,6 +257,27 @@ test('quadMix yaw cw: CCW props faster', () => {
 
 test('quadMix clamps 0..1', () => {
   K.quadMix(1, 1, 1, 1).forEach(v => { if (v < 0 || v > 1) throw new Error('unclamped'); });
+});
+
+// ── Task 6 tests: robots.js arm config consistency
+test('arm config has 7 joints (6 revolute + gripper)', () => {
+  if (ROBOTS.arm.joints.length !== 7) throw new Error(`got ${ROBOTS.arm.joints.length}`);
+  if (ROBOTS.arm.jointNames.length !== 7) throw new Error('names mismatch');
+  if (ROBOTS.arm.jointLimits.length !== 7) throw new Error('limits mismatch');
+});
+
+test('arm config DH rows match test chain at zero pose', () => {
+  const p = ROBOTS.arm.params;
+  const chain = new K.DHChain((q) => armDHRows(q, p));
+  const H = 20 + p.l1 + p.l2 + p.l3 + p.l4 + ARM_FLANGE;
+  approxArr(chain.eePos([0,0,0,0,0,0]), [0, 0, H], 1e-6);
+});
+
+test('armFK returns world coords (Y up)', () => {
+  const p = ROBOTS.arm.params;
+  const f = ROBOTS.arm.fk([0,0,0,0,0,0,18], p);
+  approx(f.x, 0, 1e-6); approx(f.z, 0, 1e-6);
+  approx(f.y, 20 + p.l1 + p.l2 + p.l3 + p.l4 + ARM_FLANGE, 1e-6);
 });
 
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
