@@ -280,6 +280,18 @@ test('armFK returns world coords (Y up)', () => {
   approx(f.y, 20 + p.l1 + p.l2 + p.l3 + p.l4 + ARM_FLANGE, 1e-6);
 });
 
+test('armFK bent pose matches independent planar geometry', () => {
+  // pitch joints only => chain stays in the world XY plane; derive EE from
+  // cumulative link angles measured from vertical (+ toward -x), not from DH
+  const p = ROBOTS.arm.params;
+  const q1 = 30 * K.DEG, q2 = -60 * K.DEG, q5 = 45 * K.DEG;
+  const f = ROBOTS.arm.fk([0, q1, q2, 0, 0, q5, 18], p);
+  const a1 = q1, a2 = q1 + q2, a3 = a2, a4 = a2 + q5; // l2, l3, l4, flange angles
+  const x = -(p.l2 * Math.sin(a1) + p.l3 * Math.sin(a2) + p.l4 * Math.sin(a3) + ARM_FLANGE * Math.sin(a4));
+  const y = 20 + p.l1 + p.l2 * Math.cos(a1) + p.l3 * Math.cos(a2) + p.l4 * Math.cos(a3) + ARM_FLANGE * Math.cos(a4);
+  approx(f.x, x, 1e-6, 'x'); approx(f.y, y, 1e-6, 'y'); approx(f.z, 0, 1e-6, 'z');
+});
+
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
 const summary = `TESTS: ${passed} passed, ${failed} failed`;
 console.log(summary);
