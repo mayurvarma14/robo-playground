@@ -240,7 +240,7 @@ export class DHChain {
         }
       const tr = Re[0][0] + Re[1][1] + Re[2][2];
       const angle = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
-      if (angle > 1e-9) {
+      if (angle > 1e-6) {
         let v;
         if (Math.sin(angle) > 1e-6) {
           const f = angle / (2 * Math.sin(angle));
