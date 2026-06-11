@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 export class Viewport {
   constructor() {
@@ -55,6 +56,28 @@ export class Viewport {
     this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
     this.controls.target.set(0, 90, 0);
     this.controls.update();
+
+    // IK target gizmo
+    this.gizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.gizmo.size = 0.8;
+    this.gizmo.addEventListener('dragging-changed', (e) => {
+      this.controls.enabled = !e.value;
+    });
+    this.scene.add(this.gizmo);
+
+    // joint frame triads + other kinematic overlays
+    this.kinHelpers = new THREE.Group();
+    this.scene.add(this.kinHelpers);
+
+    // end-effector trace (preallocated line buffer)
+    this.traceMax = 500;
+    this.traceCount = 0;
+    const traceGeo = new THREE.BufferGeometry();
+    traceGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.traceMax * 3), 3));
+    traceGeo.setDrawRange(0, 0);
+    this.traceLine = new THREE.Line(traceGeo, new THREE.LineBasicMaterial({ color: 0x22d3ee }));
+    this.traceLine.frustumCulled = false;
+    this.scene.add(this.traceLine);
 
     this._buildLighting();
     this._buildFloor();
@@ -217,10 +240,68 @@ export class Viewport {
     if (this.axesHelper) this.axesHelper.visible = v;
   }
 
+  attachGizmo(obj, mode = 'translate') {
+    this.gizmo.attach(obj);
+    this.gizmo.setMode(mode);
+  }
+  detachGizmo() { this.gizmo.detach(); }
+  setGizmoMode(mode) { this.gizmo.setMode(mode); }
+
+  clearKinHelpers() {
+    while (this.kinHelpers.children.length) this.kinHelpers.remove(this.kinHelpers.children[0]);
+  }
+  addKinHelper(obj) { this.kinHelpers.add(obj); }
+
+  // small RGB axes triad for joint frames
+  makeTriad(size = 22) {
+    const triad = new THREE.Group();
+    const dirs = [
+      [[1, 0, 0], 0xef4444],
+      [[0, 1, 0], 0x22c55e],
+      [[0, 0, 1], 0x3b82f6],
+    ];
+    for (const [d, color] of dirs) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(d[0] * size, d[1] * size, d[2] * size),
+      ]);
+      triad.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color })));
+    }
+    return triad;
+  }
+
+  pushTracePoint(x, y, z) {
+    const attr = this.traceLine.geometry.attributes.position;
+    if (this.traceCount >= this.traceMax) {
+      attr.array.copyWithin(0, 3);
+      this.traceCount = this.traceMax - 1;
+    }
+    attr.array[this.traceCount * 3] = x;
+    attr.array[this.traceCount * 3 + 1] = y;
+    attr.array[this.traceCount * 3 + 2] = z;
+    this.traceCount++;
+    attr.needsUpdate = true;
+    this.traceLine.geometry.setDrawRange(0, this.traceCount);
+  }
+
+  clearTrace() {
+    this.traceCount = 0;
+    this.traceLine.geometry.setDrawRange(0, 0);
+  }
+
+  _isHelper(obj) {
+    let o = obj;
+    while (o) {
+      if (o === this.gizmo || o === this.kinHelpers || o === this.traceLine) return true;
+      o = o.parent;
+    }
+    return false;
+  }
+
   setWireframe(v) {
     this.wireframe = v;
     this.scene.traverse(obj => {
-      if (obj.isMesh && obj.material) obj.material.wireframe = v;
+      if (obj.isMesh && obj.material && !this._isHelper(obj)) obj.material.wireframe = v;
     });
   }
 
