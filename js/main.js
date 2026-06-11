@@ -6,6 +6,8 @@ import { Viewport } from './viewport.js';
 import { ROBOTS } from './robots.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
+if (new URLSearchParams(location.search).has('test')) import('./tests.js');
+
 // ─────────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────────
