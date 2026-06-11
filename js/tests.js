@@ -3,7 +3,7 @@
  * Results go to console and a fixed banner.
  */
 import * as K from './kinematics.js';
-import { ROBOTS, armDHRows, ARM_FLANGE } from './robots.js';
+import { ROBOTS, armDHRows, ARM_FLANGE, dexArmChainFK } from './robots.js';
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -290,6 +290,38 @@ test('armFK bent pose matches independent planar geometry', () => {
   const x = -(p.l2 * Math.sin(a1) + p.l3 * Math.sin(a2) + p.l4 * Math.sin(a3) + ARM_FLANGE * Math.sin(a4));
   const y = 20 + p.l1 + p.l2 * Math.cos(a1) + p.l3 * Math.cos(a2) + p.l4 * Math.cos(a3) + ARM_FLANGE * Math.cos(a4);
   approx(f.x, x, 1e-6, 'x'); approx(f.y, y, 1e-6, 'y'); approx(f.z, 0, 1e-6, 'z');
+});
+
+// ── Task 7 tests: per-robot kinematics configs
+test('every robot has a kinematics block', () => {
+  for (const [key, cfg] of Object.entries(ROBOTS))
+    if (!cfg.kinematics) throw new Error(`${key} missing kinematics`);
+});
+
+test('scara config FK matches analytical scaraFK', () => {
+  const p = ROBOTS.scara.params;
+  const f = ROBOTS.scara.fk([0.4, -0.6, 50, 0], p);
+  const a = K.scaraFK(0.4, -0.6, p.l1, p.l2);
+  approx(f.x, a.x, 1e-6); approx(f.z, a.z, 1e-6);
+  approx(f.y, p.pedestalH - 50, 1e-6);
+});
+
+test('dexarm chain FK: zero pose hands out in T-pose', () => {
+  const p = ROBOTS.dexarm.params;
+  const right = dexArmChainFK([0, 0, 0], p, 1);
+  const left = dexArmChainFK([0, 0, 0], p, -1);
+  // T-pose: arm extends outward along ±X at shoulder height
+  const reach = p.upperArmLen + 8 + p.forearmLen + 20 + p.palmLen / 2;
+  approx(right[0], 58 + reach, 1e-6, 'right x');
+  approx(left[0], -(58 + reach), 1e-6, 'left x');
+  approx(right[1], 150 + 180 * 0.82, 1e-6, 'shoulder height');
+});
+
+test('dexarm numeric IK reaches forward target', () => {
+  const p = ROBOTS.dexarm.params;
+  const target = dexArmChainFK([0.3, 0.5, 1.0], p, 1);
+  const r = K.solvePositionIK((q) => dexArmChainFK(q, p, 1), [0, 0, 0.5], target);
+  if (!r.converged) throw new Error(`posErr=${r.posErr}`);
 });
 
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)

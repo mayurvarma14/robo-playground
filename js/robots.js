@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { MAT } from './materials.js';
-import { DHChain, dhToWorld } from './kinematics.js';
+import { DHChain, dhToWorld, scaraFK, matMul, matRotX, matRotY, matRotZ, matTrans, matPoint } from './kinematics.js';
 
 export const ARM_FLANGE = 30;
 
@@ -433,25 +433,38 @@ export function buildQuadruped(joints, params) {
   const { coxa = 40, femur = 80, tibia = 85, bodyLen = 160, bodyW = 100 } = params;
   const root = new THREE.Group();
 
+  // Body + legs live in one group so a body pose transform moves hips
+  // while leg IK keeps feet planted.
+  const bodyGroup = new THREE.Group();
+  bodyGroup.name = 'BodyGroup';
+  root.add(bodyGroup);
+
+  // Optional body pose injected by the IK controller:
+  const bp = params._bodyPose;
+  if (bp) {
+    bodyGroup.position.set(bp.x || 0, bp.y || 0, bp.z || 0);
+    bodyGroup.rotation.set(bp.rx || 0, bp.ry || 0, bp.rz || 0);
+  }
+
   // Body
   const body = box(bodyW, 30, bodyLen, MAT.blackAnodised, 'Main Body');
   body.position.y = femur + tibia + 10;
-  root.add(body);
+  bodyGroup.add(body);
 
   // Body top cover
   const cover = box(bodyW - 10, 20, bodyLen - 10, MAT.darkPolycarbonate, 'Body Cover');
   cover.position.y = femur + tibia + 28;
-  root.add(cover);
+  bodyGroup.add(cover);
 
   // Sensor head
   const sensorHead = box(bodyW - 20, 24, 30, MAT.titanium, 'Sensor Head');
   sensorHead.position.set(0, femur + tibia + 30, bodyLen / 2 - 5);
-  root.add(sensorHead);
+  bodyGroup.add(sensorHead);
 
   // LiDAR disk
   const lidar = cyl(12, 12, 8, 20, MAT.cyan, 'LiDAR');
   lidar.position.set(0, femur + tibia + 46, bodyLen / 2 - 5);
-  root.add(lidar);
+  bodyGroup.add(lidar);
 
   const legPositions = [
     [  bodyW / 2,  bodyLen / 2 - 20 ],  // FR
@@ -469,7 +482,7 @@ export function buildQuadruped(joints, params) {
 
     const legGroup = new THREE.Group();
     legGroup.position.set(lx, femur + tibia + 10, lz);
-    root.add(legGroup);
+    bodyGroup.add(legGroup);
 
     // Hip yaw joint
     const hipYaw = new THREE.Group();
@@ -575,23 +588,25 @@ export function buildRover(joints, params) {
 
   const wheelNames = ['Front Left', 'Front Right', 'Mid Left', 'Mid Right', 'Rear Left', 'Rear Right'];
 
+  // joints: [0]=wheel spin angle, [1]=FL steer, [2]=FR steer, [3]=RL steer, [4]=RR steer
+  const steerByIndex = [joints[1], joints[2], 0, 0, joints[3], joints[4]];
+
   for (let i = 0; i < 6; i++) {
     const [sx, , wz] = wheelPositions[i];
     const wg = new THREE.Group();
     wg.position.set(sx * (chassisW / 2 + wheelW / 2), wheelR, wz);
+    wg.rotation.y = steerByIndex[i]; // steer about vertical axis
+    wg.name = `WheelGroup${i}`;
 
-    // Tyre
     const tyre = cyl(wheelR, wheelR, wheelW, 24, MAT.rubber, `${wheelNames[i]} Tyre`);
     tyre.rotation.z = Math.PI / 2;
-    tyre.rotation.y = joints[i < 4 ? (i < 2 ? 0 : 1) : 2];
+    tyre.rotation.y = joints[0]; // spin
     wg.add(tyre);
 
-    // Hub
     const hub = cyl(wheelR * 0.45, wheelR * 0.45, wheelW + 4, 16, MAT.aluminium, `${wheelNames[i]} Hub`);
     hub.rotation.z = Math.PI / 2;
     wg.add(hub);
 
-    // Spokes
     for (let s = 0; s < 5; s++) {
       const spoke = box(wheelR * 0.75, 3, 3, MAT.darkSteel);
       spoke.rotation.z = (s / 5) * Math.PI;
@@ -954,6 +969,26 @@ export function dexArmFK(joints, params) {
   return { x: 0, y: 0, z: 0 };
 }
 
+// World position of one palm centre. q = [shoulderPitch, shoulderYaw, elbowFlex]
+export function dexArmChainFK(q, params, side) {
+  const torsoH = 180, torsoW = 80;
+  const mount = matTrans(side * (torsoW / 2 + 18), 150 + torsoH * 0.82, 0);
+  // shoulderGroup: rotation.z = q0*side, rotation.y = q1*side (euler XYZ => RX·RY·RZ, RX=0)
+  const shoulder = matMul(matRotY(q[1] * side), matRotZ(q[0] * side));
+  const tPose = matRotZ(side * Math.PI / 2);
+  const upper = matTrans(0, -params.upperArmLen, 0);
+  const elbow = matRotZ(-q[2] * side);
+  const fore = matTrans(0, -8 - params.forearmLen, 0);
+  const palm = matTrans(0, -20 - params.palmLen / 2, 0);
+  let T = matMul(mount, shoulder);
+  T = matMul(T, tPose);
+  T = matMul(T, upper);
+  T = matMul(T, elbow);
+  T = matMul(T, fore);
+  T = matMul(T, palm);
+  return matPoint(T, [0, 0, 0]);
+}
+
 // ─────────────────────────────────────────────────────────────
 // ROBOT 7 — QUADCOPTER DRONE
 // ─────────────────────────────────────────────────────────────
@@ -1117,6 +1152,15 @@ export const ROBOTS = {
       { label: 'Foot Height', key: 'footH',       min: 10,  max: 28,  step: 2,  unit: 'mm' },
     ],
     ikSupported: false,
+    kinematics: {
+      type: 'limbs',
+      arm: (p) => ({ upper: 82, fore: 82, shoulderY: 120, shoulderX: p.hipSpacing / 2 + 30 }),
+      leg: (p) => ({ thigh: p.thigh, shin: p.shin, hipY: -15, hipX: p.hipSpacing / 2 }),
+      rootY: (p) => p.thigh + p.shin + p.footH + 15,
+      // mass fractions for ground-projected COM (coarse anthropomorphic split)
+      masses: { torso: 0.50, head: 0.07, arm: 0.05, thigh: 0.10, shin: 0.06, foot: 0.015 },
+      anchor: 'Optimus-class proportions',
+    },
   },
 
   quadruped: {
@@ -1144,15 +1188,36 @@ export const ROBOTS = {
       { label: 'Body Width', key: 'bodyW',   min: 70,  max: 160, step: 10, unit: 'mm' },
     ],
     ikSupported: false,
+    kinematics: {
+      type: 'quad-legs',
+      // legs: name, hip offset from body centre (local), side sign for coxa
+      legs: (p) => {
+        const H = p.femur + p.tibia + 10;
+        return [
+          { name: 'FR', joint0: 0, hip: [ p.bodyW / 2, H,  p.bodyLen / 2 - 20], side:  1 },
+          { name: 'FL', joint0: 3, hip: [-p.bodyW / 2, H,  p.bodyLen / 2 - 20], side: -1 },
+          { name: 'BL', joint0: 6, hip: [-p.bodyW / 2, H, -p.bodyLen / 2 + 20], side: -1 },
+          { name: 'BR', joint0: 9, hip: [ p.bodyW / 2, H, -p.bodyLen / 2 + 20], side:  1 },
+        ];
+      },
+      footOffset: 2, // foot sphere centre sits 2 below tibia end — add to tibia in IK calls
+      anchor: 'Boston Dynamics Spot-class leg geometry',
+    },
   },
 
   rover: {
     name: 'Mars Rover',
     builder: buildRover,
     fk: null,
-    joints: [0, 0, 0, 0, 0, 0],
-    jointNames: ['Front Wheels', 'Mid Wheels', 'Rear Wheels', 'Arm Joint 1', 'Arm Joint 2', 'Arm Joint 3'],
-    jointLimits: Array(6).fill({ min: -360, max: 360, step: 5, isAngle: true }),
+    joints: [0, 0, 0, 0, 0],
+    jointNames: ['Wheel Spin', 'FL Steer', 'FR Steer', 'RL Steer', 'RR Steer'],
+    jointLimits: [
+      { min: -360, max: 360, step: 5, isAngle: true },
+      { min: -50,  max: 50,  step: 1, isAngle: true },
+      { min: -50,  max: 50,  step: 1, isAngle: true },
+      { min: -50,  max: 50,  step: 1, isAngle: true },
+      { min: -50,  max: 50,  step: 1, isAngle: true },
+    ],
     params: { chassisL: 200, chassisW: 140, wheelR: 40, wheelW: 20 },
     paramDefs: [
       { label: 'Chassis Length', key: 'chassisL', min: 150, max: 300, step: 10, unit: 'mm' },
@@ -1161,12 +1226,21 @@ export const ROBOTS = {
       { label: 'Wheel Width',    key: 'wheelW',   min: 12,  max: 35,  step: 2,  unit: 'mm' },
     ],
     ikSupported: false,
+    kinematics: {
+      type: 'ackermann',
+      // corner-wheel geometry from chassis params
+      geometry: (p) => ({ wheelbase: p.chassisL - 50, track: p.chassisW + p.wheelW }),
+      anchor: 'NASA Perseverance — 4 corner-wheel steering',
+    },
   },
 
   scara: {
     name: 'SCARA Arm',
     builder: buildSCARA,
-    fk: null,
+    fk: (joints, params) => {
+      const p = scaraFK(joints[0], joints[1], params.l1, params.l2);
+      return { x: p.x, y: params.pedestalH - joints[2], z: p.z };
+    },
     joints: [Math.PI / 5, Math.PI / 5, 30, 0],
     jointNames: ['Shoulder Axis', 'Elbow Axis', 'Z Slide', 'Tool Rotation'],
     jointLimits: [
@@ -1181,7 +1255,20 @@ export const ROBOTS = {
       { label: 'Outer Link',    key: 'l2',        min: 80,  max: 200, step: 10, unit: 'mm' },
       { label: 'Pedestal Ht.', key: 'pedestalH', min: 120, max: 280, step: 10, unit: 'mm' },
     ],
-    ikSupported: false,
+    ikSupported: true,
+    kinematics: {
+      type: 'scara',
+      // DH for expert panel + FK; q = [q1, q2, zSlide(mm), q4]
+      rows: (q, p) => [
+        [q[0], p.pedestalH, p.l1, 0],
+        [q[1], 0,           p.l2, 0],
+        [0,   -q[2],        0,    0],   // prismatic Z slide
+        [q[3], 0,           0,    0],
+      ],
+      prismatic: [2],
+      zTravel: 130,
+      anchor: 'Epson LS6-B class (600 mm reach family, scaled)',
+    },
   },
 
   drone: {
@@ -1197,6 +1284,10 @@ export const ROBOTS = {
       { label: 'Body Size',   key: 'bodySize', min: 40,  max: 100, step: 5,  unit: 'mm' },
     ],
     ikSupported: false,
+    kinematics: {
+      type: 'mixer',
+      anchor: 'X-quad convention (FR/BL CCW, FL/BR CW)',
+    },
   },
 
   dexarm: {
@@ -1260,6 +1351,12 @@ export const ROBOTS = {
       { label: 'Forearm',   key: 'forearmLen',  min: 70,  max: 160, step: 5, unit: 'mm' },
       { label: 'Palm',      key: 'palmLen',     min: 35,  max: 80,  step: 5, unit: 'mm' },
     ],
-    ikSupported: false,
+    ikSupported: true,
+    kinematics: {
+      type: 'numeric-arms',
+      fkFn: dexArmChainFK,
+      ikJoints: [0, 1, 2], // shoulder pitch, shoulder yaw, elbow drive position IK
+      anchor: 'Shadow Hand finger ranges; bimanual torso layout',
+    },
   },
 };
