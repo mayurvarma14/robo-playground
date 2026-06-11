@@ -81,3 +81,89 @@ export function solveLinear(A, b) {
 // DH-frame (Z-up) <-> Three.js world (Y-up)
 export function dhToWorld([x, y, z]) { return [x, z, -y]; }
 export function worldToDH([x, y, z]) { return [x, -z, y]; }
+
+// ─────────────────────────────────────────────────────────────
+// DH CHAIN — FK, Jacobian, manipulability, DLS IK
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * rowsFn(q) → array of [theta, d, a, alpha] (radians/units), one per joint.
+ * limits: optional [{min, max}] radians, same length as q.
+ */
+export class DHChain {
+  constructor(rowsFn, limits = null) {
+    this.rowsFn = rowsFn;
+    this.limits = limits;
+  }
+
+  fk(q) {
+    let T = matIdentity();
+    const frames = [];
+    for (const [theta, d, a, alpha] of this.rowsFn(q)) {
+      T = matMul(T, dhMatrix(theta, d, a, alpha));
+      frames.push(T);
+    }
+    return { frames, ee: T };
+  }
+
+  eePos(q) {
+    const { ee } = this.fk(q);
+    return [ee[0][3], ee[1][3], ee[2][3]];
+  }
+
+  // 6×n numeric Jacobian: rows = [vx vy vz wx wy wz] per unit joint velocity
+  jacobian(q, eps = 1e-5) {
+    const n = q.length;
+    const T0 = this.fk(q).ee;
+    const J = Array.from({ length: 6 }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      const qp = q.slice();
+      qp[i] += eps;
+      const T1 = this.fk(qp).ee;
+      J[0][i] = (T1[0][3] - T0[0][3]) / eps;
+      J[1][i] = (T1[1][3] - T0[1][3]) / eps;
+      J[2][i] = (T1[2][3] - T0[2][3]) / eps;
+      // angular velocity ≈ vee(R1·R0ᵀ skew part)/eps
+      const R = [[0,0,0],[0,0,0],[0,0,0]];
+      for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 3; c++) {
+          let s = 0;
+          for (let k = 0; k < 3; k++) s += T1[r][k] * T0[c][k];
+          R[r][c] = s;
+        }
+      J[3][i] = (R[2][1] - R[1][2]) / (2 * eps);
+      J[4][i] = (R[0][2] - R[2][0]) / (2 * eps);
+      J[5][i] = (R[1][0] - R[0][1]) / (2 * eps);
+    }
+    return J;
+  }
+
+  // Yoshikawa manipulability w = sqrt(det(J·Jᵀ)). Near 0 ⇒ singularity.
+  manipulability(q) {
+    const J = this.jacobian(q);
+    const m = 6;
+    const A = Array.from({ length: m }, () => new Array(m).fill(0));
+    for (let i = 0; i < m; i++)
+      for (let j = 0; j < m; j++) {
+        let s = 0;
+        for (let k = 0; k < J[0].length; k++) s += J[i][k] * J[j][k];
+        A[i][j] = s;
+      }
+    // determinant via elimination
+    let det = 1;
+    const M = A.map(r => r.slice());
+    for (let col = 0; col < m; col++) {
+      let piv = col;
+      for (let r = col + 1; r < m; r++)
+        if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+      if (Math.abs(M[piv][col]) < 1e-12) return 0;
+      if (piv !== col) { [M[col], M[piv]] = [M[piv], M[col]]; det = -det; }
+      det *= M[col][col];
+      for (let r = col + 1; r < m; r++) {
+        const f = M[r][col] / M[col][col];
+        for (let c = col; c < m; c++) M[r][c] -= f * M[col][c];
+      }
+    }
+    return Math.sqrt(Math.max(0, det));
+  }
+}

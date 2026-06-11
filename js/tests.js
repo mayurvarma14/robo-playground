@@ -61,6 +61,48 @@ test('world/DH mapping roundtrip', () => {
   approxArr(K.worldToDH(K.dhToWorld([1, 2, 3])), [1, 2, 3]);
 });
 
+// ── Task 2 tests: DHChain FK on the 6-DOF arm table
+const ARM_P = { l1: 81, l2: 213, l3: 196, l4: 67 };
+const FLANGE = 30;
+const armRows = (q) => [
+  [q[0],                ARM_P.l1 + 20, 0,        Math.PI / 2],
+  [q[1] + Math.PI / 2,  0,             ARM_P.l2, 0],
+  [q[2],                0,             ARM_P.l3, 0],
+  [q[3] + Math.PI / 2,  0,             0,        Math.PI / 2],
+  [q[4],                ARM_P.l4,      0,       -Math.PI / 2],
+  [q[5] - Math.PI / 2,  0,             FLANGE,   0],
+];
+const armChain = new K.DHChain(armRows);
+
+test('arm FK zero pose: straight up', () => {
+  const H = 20 + ARM_P.l1 + ARM_P.l2 + ARM_P.l3 + ARM_P.l4 + FLANGE;
+  approxArr(armChain.eePos([0,0,0,0,0,0]), [0, 0, H], 1e-6, 'eePos');
+});
+
+test('arm FK shoulder tilt 30deg', () => {
+  const phi = 30 * K.DEG;
+  const L = ARM_P.l2 + ARM_P.l3 + ARM_P.l4 + FLANGE;
+  approxArr(
+    armChain.eePos([0, phi, 0, 0, 0, 0]),
+    [-L * Math.sin(phi), 0, 20 + ARM_P.l1 + L * Math.cos(phi)],
+    1e-6, 'eePos'
+  );
+});
+
+test('arm FK base yaw moves EE in DH -y', () => {
+  // tilt shoulder then yaw base 90°: x-reach rotates to DH y axis
+  const phi = 30 * K.DEG;
+  const p0 = armChain.eePos([0, phi, 0, 0, 0, 0]);
+  const p1 = armChain.eePos([Math.PI / 2, phi, 0, 0, 0, 0]);
+  approxArr(p1, [0, p0[0], p0[2]], 1e-6, 'rotated'); // RotZ(90): x->y
+});
+
+test('manipulability: stretched pose is near-singular', () => {
+  const wSing = armChain.manipulability([0, 0, 0, 0, 0, 0]);     // fully extended
+  const wGood = armChain.manipulability([0, 40*K.DEG, -70*K.DEG, 20*K.DEG, 30*K.DEG, 0]);
+  if (!(wGood > wSing)) throw new Error(`expected wGood ${wGood} > wSing ${wSing}`);
+});
+
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
 const summary = `TESTS: ${passed} passed, ${failed} failed`;
 console.log(summary);
