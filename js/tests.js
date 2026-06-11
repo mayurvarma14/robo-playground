@@ -298,12 +298,15 @@ test('every robot has a kinematics block', () => {
     if (!cfg.kinematics) throw new Error(`${key} missing kinematics`);
 });
 
-test('scara config FK matches analytical scaraFK', () => {
-  const p = ROBOTS.scara.params;
-  const f = ROBOTS.scara.fk([0.4, -0.6, 50, 0], p);
-  const a = K.scaraFK(0.4, -0.6, p.l1, p.l2);
-  approx(f.x, a.x, 1e-6); approx(f.z, a.z, 1e-6);
-  approx(f.y, p.pedestalH - 50, 1e-6);
+test('scara config fk agrees with its own DH rows', () => {
+  // independent path: run the config's DH table through DHChain + dhToWorld
+  const cfg = ROBOTS.scara;
+  const p = cfg.params;
+  const q = [0.4, -0.6, 50, 0.3];
+  const chain = new K.DHChain((qq) => cfg.kinematics.rows(qq, p));
+  const [wx, wy, wz] = K.dhToWorld(chain.eePos(q));
+  const f = cfg.fk(q, p);
+  approx(f.x, wx, 1e-6, 'x'); approx(f.y, wy, 1e-6, 'y'); approx(f.z, wz, 1e-6, 'z');
 });
 
 test('dexarm chain FK: zero pose hands out in T-pose', () => {

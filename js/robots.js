@@ -439,7 +439,8 @@ export function buildQuadruped(joints, params) {
   bodyGroup.name = 'BodyGroup';
   root.add(bodyGroup);
 
-  // Optional body pose injected by the IK controller:
+  // Optional body pose injected by the IK controller, which owns the key:
+  // it sets _bodyPose before each rebuild and deletes it on deactivate.
   const bp = params._bodyPose;
   if (bp) {
     bodyGroup.position.set(bp.x || 0, bp.y || 0, bp.z || 0);
@@ -598,19 +599,23 @@ export function buildRover(joints, params) {
     wg.rotation.y = steerByIndex[i]; // steer about vertical axis
     wg.name = `WheelGroup${i}`;
 
+    // spin rolls the whole wheel assembly about the axle (local X after steer)
+    const spinGroup = new THREE.Group();
+    spinGroup.rotation.x = joints[0];
+    wg.add(spinGroup);
+
     const tyre = cyl(wheelR, wheelR, wheelW, 24, MAT.rubber, `${wheelNames[i]} Tyre`);
     tyre.rotation.z = Math.PI / 2;
-    tyre.rotation.y = joints[0]; // spin
-    wg.add(tyre);
+    spinGroup.add(tyre);
 
     const hub = cyl(wheelR * 0.45, wheelR * 0.45, wheelW + 4, 16, MAT.aluminium, `${wheelNames[i]} Hub`);
     hub.rotation.z = Math.PI / 2;
-    wg.add(hub);
+    spinGroup.add(hub);
 
     for (let s = 0; s < 5; s++) {
       const spoke = box(wheelR * 0.75, 3, 3, MAT.darkSteel);
       spoke.rotation.z = (s / 5) * Math.PI;
-      wg.add(spoke);
+      spinGroup.add(spoke);
     }
 
     root.add(wg);
@@ -964,12 +969,17 @@ export function buildDexArm(joints, params) {
   return root;
 }
 
-// FK helper — returns zeros (IK not active for this robot)
+// Telemetry FK — right palm world position from the slider joints
 export function dexArmFK(joints, params) {
-  return { x: 0, y: 0, z: 0 };
+  const [x, y, z] = dexArmChainFK([joints[0], joints[1], joints[2]], params, 1);
+  return { x, y, z };
 }
 
-// World position of one palm centre. q = [shoulderPitch, shoulderYaw, elbowFlex]
+/**
+ * World position of one palm centre. q = [shoulderPitch, shoulderYaw, elbowFlex].
+ * Models the wrist-neutral pose: wrist joints (3-4) pivot the hand about the
+ * wrist ball and are not part of the position IK chain (kinematics.ikJoints).
+ */
 export function dexArmChainFK(q, params, side) {
   const torsoH = 180, torsoW = 80;
   const mount = matTrans(side * (torsoW / 2 + 18), 150 + torsoH * 0.82, 0);
