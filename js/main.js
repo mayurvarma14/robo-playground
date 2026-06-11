@@ -4,6 +4,7 @@
  */
 import { Viewport } from './viewport.js';
 import { ROBOTS } from './robots.js';
+import { IKController } from './ik-control.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
 if (new URLSearchParams(location.search).has('test')) import('./tests.js');
@@ -58,6 +59,7 @@ function buildAndShowRobot(key) {
 
   // Rebuild right-panel controls
   renderJointControls();
+  ik.activate(key);
   renderParamControls();
   renderExportList();
   updateTelemetry();
@@ -219,49 +221,23 @@ document.getElementById('btn-reset-pose').addEventListener('click', () => {
 // ─────────────────────────────────────────────────────────────
 // IK CONTROLS
 // ─────────────────────────────────────────────────────────────
-document.getElementById('btn-ik-solve').addEventListener('click', () => {
+function syncJointInputs() {
   const cfg = robots[state.activeRobot];
-  const warning = document.getElementById('ik-warning');
+  cfg.joints.forEach((val, i) => {
+    const limits = cfg.jointLimits[i];
+    const disp = limits.isAngle ? val / Math.PI * 180 : val;
+    const slider = document.getElementById(`jslider-${i}`);
+    const numIn = document.getElementById(`jnum-${i}`);
+    if (slider) slider.value = disp;
+    if (numIn && document.activeElement !== numIn) numIn.value = Math.round(disp);
+  });
+}
 
-  if (!cfg.ikSupported || !cfg.fk) {
-    warning.style.display = 'flex';
-    warning.querySelector('span').textContent = ' IK not supported for this robot.';
-    return;
-  }
-
-  const x = parseFloat(document.getElementById('ik-x').value);
-  const y = parseFloat(document.getElementById('ik-y').value);
-  const z = parseFloat(document.getElementById('ik-z').value);
-
-  // Simple FABRIK-style IK for the 6-DOF arm (2-link planar)
-  const { l2, l3 } = cfg.params;
-  const r = Math.sqrt(x * x + z * z);
-  const h = y - (cfg.params.l1 + 20);
-  const d = Math.sqrt(r * r + h * h);
-
-  if (d > l2 + l3) {
-    warning.style.display = 'flex';
-    warning.querySelector('span:last-child').textContent = ' Target out of workspace';
-    return;
-  }
-
-  warning.style.display = 'none';
-
-  // Shoulder/elbow angles (2-link)
-  const cos_e = (d * d - l2 * l2 - l3 * l3) / (2 * l2 * l3);
-  const elbow = -Math.acos(Math.max(-1, Math.min(1, cos_e)));
-  const shoulder = Math.atan2(h, r) - Math.atan2(l3 * Math.sin(elbow), l2 + l3 * Math.cos(elbow));
-  const base = Math.atan2(z, x);
-
-  cfg.joints[0] = base;
-  cfg.joints[1] = shoulder;
-  cfg.joints[2] = elbow;
-  cfg.joints[3] = -(shoulder + elbow);
-
-  renderJointControls();
-  rebuildCurrentRobot();
-
-  document.getElementById('ik-status-text').textContent = 'IK Solved';
+const ik = new IKController({
+  viewport,
+  robots,
+  getActiveKey: () => state.activeRobot,
+  onJointsChanged: () => { syncJointInputs(); rebuildCurrentRobot(); },
 });
 
 // ─────────────────────────────────────────────────────────────

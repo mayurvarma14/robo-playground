@@ -181,32 +181,14 @@
               <div id="joint-controls-container"></div>
             </div>
 
-            <div class="pane-section">
+            <div class="pane-section" id="ik-section">
               <div class="section-header">
                 <span class="section-title">Inverse Kinematics</span>
+                <button class="mini-btn" id="btn-ik-mode" style="display:none">Rotate</button>
               </div>
-              <div class="ik-grid">
-                <div class="ik-field">
-                  <label for="ik-x">Target X</label>
-                  <input type="number" id="ik-x" value="150" step="5">
-                  <span class="ik-unit">mm</span>
-                </div>
-                <div class="ik-field">
-                  <label for="ik-y">Target Y</label>
-                  <input type="number" id="ik-y" value="150" step="5">
-                  <span class="ik-unit">mm</span>
-                </div>
-                <div class="ik-field">
-                  <label for="ik-z">Target Z</label>
-                  <input type="number" id="ik-z" value="0" step="5">
-                  <span class="ik-unit">mm</span>
-                </div>
-              </div>
-              <button class="action-btn primary" id="btn-ik-solve">
-                <i class="fa-solid fa-crosshairs"></i> Solve IK
-              </button>
+              <div id="ik-controls"></div>
               <div class="ik-warning" id="ik-warning" style="display:none">
-                <i class="fa-solid fa-triangle-exclamation"></i> Target out of workspace
+                <i class="fa-solid fa-triangle-exclamation"></i> <span>Target out of workspace</span>
               </div>
             </div>
           </div>
