@@ -82,6 +82,59 @@ export function solveLinear(A, b) {
 export function dhToWorld([x, y, z]) { return [x, z, -y]; }
 export function worldToDH([x, y, z]) { return [x, -z, y]; }
 
+// Damped-least-squares step: dq = Jᵀ (J·Jᵀ + λ²I)⁻¹ e
+export function dlsStep(J, e, lambda) {
+  const m = J.length, n = J[0].length;
+  const A = Array.from({ length: m }, () => new Array(m).fill(0));
+  for (let i = 0; i < m; i++) {
+    for (let j = 0; j < m; j++) {
+      let s = 0;
+      for (let k = 0; k < n; k++) s += J[i][k] * J[j][k];
+      A[i][j] = s;
+    }
+    A[i][i] += lambda * lambda;
+  }
+  const y = solveLinear(A, e);
+  if (!y) return new Array(n).fill(0);
+  const dq = new Array(n).fill(0);
+  for (let k = 0; k < n; k++)
+    for (let i = 0; i < m; i++) dq[k] += J[i][k] * y[i];
+  return dq;
+}
+
+/**
+ * Generic position-only DLS IK for arbitrary FK functions.
+ * fkFn(q) → [x,y,z] world. limits: [{min,max}] or null.
+ */
+export function solvePositionIK(fkFn, qStart, target, limits = null, opts = {}) {
+  const { maxIter = 80, tol = 0.1, lambda = 6, eps = 1e-5 } = opts;
+  let q = qStart.slice();
+  let best = { q: q.slice(), posErr: Infinity };
+  for (let iter = 0; iter < maxIter; iter++) {
+    const p = fkFn(q);
+    const e = [target[0] - p[0], target[1] - p[1], target[2] - p[2]];
+    const posErr = Math.hypot(...e);
+    if (posErr < best.posErr) best = { q: q.slice(), posErr };
+    if (posErr < tol) return { q, converged: true, iterations: iter, posErr };
+    const n = q.length;
+    const J = [new Array(n), new Array(n), new Array(n)];
+    for (let i = 0; i < n; i++) {
+      const qp = q.slice();
+      qp[i] += eps;
+      const pp = fkFn(qp);
+      J[0][i] = (pp[0] - p[0]) / eps;
+      J[1][i] = (pp[1] - p[1]) / eps;
+      J[2][i] = (pp[2] - p[2]) / eps;
+    }
+    const dq = dlsStep(J, e, lambda);
+    for (let i = 0; i < n; i++) {
+      q[i] += dq[i];
+      if (limits) q[i] = Math.max(limits[i].min, Math.min(limits[i].max, q[i]));
+    }
+  }
+  return { q: best.q, converged: false, iterations: maxIter, posErr: best.posErr };
+}
+
 // ─────────────────────────────────────────────────────────────
 // DH CHAIN — FK, Jacobian, manipulability, DLS IK
 // ─────────────────────────────────────────────────────────────
@@ -165,5 +218,65 @@ export class DHChain {
       }
     }
     return Math.sqrt(Math.max(0, det));
+  }
+
+  // 6-vector pose error. targetRot: 3×3 row-major or null (position-only).
+  // rotWeight balances radians against mm so one error norm drives both.
+  poseError(T, targetPos, targetRot, rotWeight = 20) {
+    const e = [
+      targetPos[0] - T[0][3],
+      targetPos[1] - T[1][3],
+      targetPos[2] - T[2][3],
+      0, 0, 0,
+    ];
+    if (targetRot) {
+      // Re = Rt · Rᵀ ; axis-angle of Re
+      const Re = [[0,0,0],[0,0,0],[0,0,0]];
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++) {
+          let s = 0;
+          for (let k = 0; k < 3; k++) s += targetRot[i][k] * T[j][k];
+          Re[i][j] = s;
+        }
+      const tr = Re[0][0] + Re[1][1] + Re[2][2];
+      const angle = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
+      if (angle > 1e-9) {
+        const f = angle / (2 * Math.sin(angle)) * rotWeight;
+        e[3] = (Re[2][1] - Re[1][2]) * f;
+        e[4] = (Re[0][2] - Re[2][0]) * f;
+        e[5] = (Re[1][0] - Re[0][1]) * f;
+      }
+    }
+    return e;
+  }
+
+  /**
+   * DLS IK. targetPos: [x,y,z] DH frame. targetRot: 3×3 or null.
+   * Returns { q, converged, iterations, posErr }.
+   * Never NaNs: damping keeps steps bounded near singularities.
+   */
+  solveIK(qStart, targetPos, targetRot = null, opts = {}) {
+    const { maxIter = 100, tolPos = 0.05, tolRot = 0.01, lambda = 6, rotWeight = 20 } = opts;
+    let q = qStart.slice();
+    let best = { q: q.slice(), posErr: Infinity };
+    for (let iter = 0; iter < maxIter; iter++) {
+      const { ee } = this.fk(q);
+      const e = this.poseError(ee, targetPos, targetRot, rotWeight);
+      const posErr = Math.hypot(e[0], e[1], e[2]);
+      const rotErr = Math.hypot(e[3], e[4], e[5]) / rotWeight;
+      if (posErr < best.posErr) best = { q: q.slice(), posErr };
+      if (posErr < tolPos && (!targetRot || rotErr < tolRot))
+        return { q, converged: true, iterations: iter, posErr };
+      const J = this.jacobian(q);
+      const dq = dlsStep(J, e, lambda);
+      for (let i = 0; i < q.length; i++) {
+        q[i] += dq[i];
+        if (this.limits) {
+          const L = this.limits[i];
+          q[i] = Math.max(L.min, Math.min(L.max, q[i]));
+        }
+      }
+    }
+    return { q: best.q, converged: false, iterations: opts.maxIter ?? 100, posErr: best.posErr };
   }
 }

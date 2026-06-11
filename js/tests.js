@@ -103,6 +103,59 @@ test('manipulability: stretched pose is near-singular', () => {
   if (!(wGood > wSing)) throw new Error(`expected wGood ${wGood} > wSing ${wSing}`);
 });
 
+// ── Task 3 tests: DLS IK
+test('IK position roundtrip within 0.1mm', () => {
+  const qTrue = [20*K.DEG, 35*K.DEG, -60*K.DEG, 15*K.DEG, 40*K.DEG, 10*K.DEG];
+  const target = armChain.eePos(qTrue);
+  const seed = [0, 20*K.DEG, -40*K.DEG, 0, 0, 0];
+  const r = armChain.solveIK(seed, target);
+  if (!r.converged) throw new Error(`did not converge, posErr=${r.posErr}`);
+  approxArr(armChain.eePos(r.q), target, 0.1, 'fk(ik)');
+});
+
+test('IK full pose roundtrip', () => {
+  const qTrue = [-15*K.DEG, 50*K.DEG, -80*K.DEG, 25*K.DEG, -30*K.DEG, 45*K.DEG];
+  const { ee } = armChain.fk(qTrue);
+  const targetPos = [ee[0][3], ee[1][3], ee[2][3]];
+  const targetRot = [
+    [ee[0][0], ee[0][1], ee[0][2]],
+    [ee[1][0], ee[1][1], ee[1][2]],
+    [ee[2][0], ee[2][1], ee[2][2]],
+  ];
+  const seed = [0, 30*K.DEG, -60*K.DEG, 10*K.DEG, 0, 0];
+  const r = armChain.solveIK(seed, targetPos, targetRot);
+  if (!r.converged) throw new Error(`did not converge, posErr=${r.posErr}`);
+  approxArr(armChain.eePos(r.q), targetPos, 0.2, 'fk(ik) pos');
+});
+
+test('IK unreachable returns best-effort, no NaN', () => {
+  const r = armChain.solveIK([0, 30*K.DEG, -60*K.DEG, 0, 0, 0], [0, 0, 5000]);
+  if (r.converged) throw new Error('should not converge');
+  r.q.forEach(v => { if (!Number.isFinite(v)) throw new Error('NaN in solution'); });
+});
+
+test('IK respects joint limits', () => {
+  const lim = Array(6).fill({ min: -Math.PI / 2, max: Math.PI / 2 });
+  const limited = new K.DHChain(armRows, lim);
+  const r = limited.solveIK([0,0,0,0,0,0], [200, 200, 100]);
+  r.q.forEach((v, i) => {
+    if (v < lim[i].min - 1e-9 || v > lim[i].max + 1e-9) throw new Error(`joint ${i} out of limits: ${v}`);
+  });
+});
+
+test('solvePositionIK on generic chain', () => {
+  // simple 2-link planar chain as fk function
+  const fk = (q) => [
+    100 * Math.cos(q[0]) + 80 * Math.cos(q[0] + q[1]),
+    100 * Math.sin(q[0]) + 80 * Math.sin(q[0] + q[1]),
+    0,
+  ];
+  const target = fk([0.6, -0.9]);
+  const r = K.solvePositionIK(fk, [0.1, -0.1], target);
+  if (!r.converged) throw new Error(`posErr=${r.posErr}`);
+  approxArr(fk(r.q), target, 0.1);
+});
+
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)
 const summary = `TESTS: ${passed} passed, ${failed} failed`;
 console.log(summary);
