@@ -109,7 +109,6 @@ export class Viewport {
     this.sunLight.shadow.camera.top    = 700;
     this.sunLight.shadow.camera.bottom = -200;
     this.sunLight.shadow.bias = -0.0002;
-    this.sunLight.shadow.radius = 4;
     this.scene.add(this.sunLight);
 
     this.rimLight = new THREE.DirectionalLight(0xbcd8ff, 0.9);
