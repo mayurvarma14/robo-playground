@@ -76,7 +76,8 @@ export class IKController {
     document.getElementById('btn-ik-mode').style.display = '';
 
     // limits in radians so the solver clamps to what the sliders allow
-    const limits = cfg.jointLimits.slice(0, 6).map(L => ({ min: L.min * DEG, max: L.max * DEG }));
+    const limits = cfg.jointLimits.slice(0, 6).map(L =>
+      L.isAngle ? { min: L.min * DEG, max: L.max * DEG } : { min: L.min, max: L.max });
     const chain = new DHChain((q) => cfg.kinematics.rows(q, cfg.params), limits);
 
     // place target at the current EE pose (position AND orientation)
