@@ -251,6 +251,8 @@ function renderJointControls() {
       cfg.joints[i] = limits.isAngle ? v * Math.PI / 180 : v;
       slider.value = v;
       numIn.value  = v;
+      const span = limits.max - limits.min;
+      row.classList.toggle('at-limit', v <= limits.min + span * 0.002 || v >= limits.max - span * 0.002);
       rebuildCurrentRobot();
     };
 
@@ -271,6 +273,7 @@ function rebuildCurrentRobot() {
   updateTelemetry();
   renderExportList();
   renderFrameTriads();
+  ik.refreshCOM(cfg);
   expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
 }
 
@@ -279,6 +282,7 @@ document.getElementById('btn-reset-pose').addEventListener('click', () => {
   const cfg = robots[state.activeRobot];
   const orig = ROBOTS[state.activeRobot].joints;
   cfg.joints = [...orig];
+  delete cfg.params._bodyPose; // body returns to neutral along with the legs
   renderJointControls();
   rebuildCurrentRobot();
 });
@@ -295,6 +299,12 @@ function syncJointInputs() {
     const numIn = document.getElementById(`jnum-${i}`);
     if (slider) slider.value = disp;
     if (numIn && document.activeElement !== numIn) numIn.value = Math.round(disp);
+    // limit badge: flag the row when the solver clamped this joint at a limit
+    if (slider) {
+      const span = limits.max - limits.min;
+      const atLimit = disp <= limits.min + span * 0.002 || disp >= limits.max - span * 0.002;
+      slider.closest('.joint-row')?.classList.toggle('at-limit', atLimit);
+    }
   });
 }
 

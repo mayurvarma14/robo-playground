@@ -57,7 +57,28 @@ export class ExpertPanel {
         <td>${kin.speeds ? kin.speeds[i] + '°/s' : '—'}</td></tr>`;
     });
     html += '</table>';
+    // world rotation: permute DH axes through (x,y,z) -> (x,z,-y), Rw = P·Rdh·Pᵀ
+    const P = [[1, 0, 0], [0, 0, 1], [0, -1, 0]];
+    const Rw = [0, 1, 2].map(i => [0, 1, 2].map(j => {
+      let s = 0;
+      for (let a = 0; a < 3; a++)
+        for (let b = 0; b < 3; b++) s += P[i][a] * ee[a][b] * P[j][b];
+      return s;
+    }));
+    // XYZ euler (Three.js default order) + quaternion from Rw
+    const sy = Math.max(-1, Math.min(1, Rw[0][2]));
+    const rpy = [
+      Math.atan2(-Rw[1][2], Rw[2][2]) / DEG,
+      Math.asin(sy) / DEG,
+      Math.atan2(-Rw[0][1], Rw[0][0]) / DEG,
+    ];
+    const qw = 0.5 * Math.sqrt(Math.max(0, 1 + Rw[0][0] + Rw[1][1] + Rw[2][2]));
+    const quat = qw > 1e-6
+      ? [(Rw[2][1] - Rw[1][2]) / (4 * qw), (Rw[0][2] - Rw[2][0]) / (4 * qw), (Rw[1][0] - Rw[0][1]) / (4 * qw), qw]
+      : [1, 0, 0, 0]; // 180° case: axis display approximate
     html += `<div class="expert-row"><b>EE (world)</b> X ${fmt(wx)} Y ${fmt(wy)} Z ${fmt(wz)} mm</div>`;
+    html += `<div class="expert-row"><b>RPY</b> ${rpy.map(v => fmt(v)).join('° ')}°
+      &nbsp;<b>quat</b> [${quat.map(v => fmt(v, 3)).join(', ')}]</div>`;
     html += `<div class="expert-row mono"><b>T<sub>0→EE</sub></b><br>${ee.map(r => r.map(v => fmt(v, 2).padStart(8)).join(' ')).join('<br>')}</div>`;
     if (kin.type === 'dh') {
       const w = chain.manipulability(q.slice(0, 6));

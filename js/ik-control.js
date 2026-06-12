@@ -486,6 +486,12 @@ export class IKController {
     };
   }
 
+  // Public: keep the COM marker honest when joints change outside the solver
+  // (direct slider moves rebuild the mesh without running a solve).
+  refreshCOM(cfg) {
+    if (this.mode === 'limbs' && this.comMarker) this._updateCOM(cfg);
+  }
+
   _updateCOM(cfg) {
     const kin = cfg.kinematics;
     const m = kin.masses;
