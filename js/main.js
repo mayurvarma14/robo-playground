@@ -183,8 +183,9 @@ function renderFrameTriads() {
     const triad = triadPool[i];
     const [x, y, z] = dhToWorld([T[0][3], T[1][3], T[2][3]]);
     triad.position.set(x, y, z);
-    // orientation: world R = C · R_dh · Cᵀ — world basis columns are images
-    // of DH basis vectors under (x,y,z)→(x,z,−y)
+    // orientation: world R = C · R_dh (row permutation), so the triad's
+    // columns are the DH frame axes mapped through (x,y,z)→(x,z,−y) —
+    // blue stays the joint's DH z-axis
     triadMat.set(
       T[0][0], T[0][1], T[0][2], 0,
       T[2][0], T[2][1], T[2][2], 0,
