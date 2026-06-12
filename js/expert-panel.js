@@ -4,9 +4,6 @@
  */
 import { DHChain, dhToWorld, legFK, DEG } from './kinematics.js';
 
-// Manipulability bar full-scale (Yoshikawa w for the 6-DOF arm). Empirical:
-// to be tuned after first browser measurement so the default arm pose
-// reads ~40–70% of the bar.
 // Empirical full-scale for the manipulability bar: the half-scale UR5e arm
 // measures w ≈ 5×10⁵ in healthy mid-workspace poses (mm³/rad³ units), so 10⁶
 // puts those around half-bar and the <12% danger zone near real singularities.
