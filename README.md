@@ -33,7 +33,7 @@ Every robot model is **procedurally generated with accurate proportions**, uses 
 
 | Robot | Type | Degrees of Freedom | Inspired By |
 |-------|------|--------------------|-------------|
-| **6-DOF Robotic Arm** | Industrial Cobot | 6 + Gripper | Universal Robots UR5 |
+| **6-DOF Robotic Arm** | Industrial Cobot | True 6 revolute + Gripper | Universal Robots UR5e (published DH dims, limits, speeds) |
 | **Humanoid Robot** | Bipedal | 13 (arms + legs + torso) | Tesla Optimus |
 | **Quadruped** | Legged Robot | 12 (3 per leg) | Boston Dynamics Spot |
 | **Mars Rover** | Wheeled Mobile | 6 wheels + sample arm | NASA Perseverance |
@@ -48,8 +48,21 @@ Every robot model is **procedurally generated with accurate proportions**, uses 
 ### 🕹️ Joint Control (Forward Kinematics)
 Independently control every joint via real-time sliders with numeric inputs. Values are clamped to realistic joint limits — no impossible poses.
 
-### 🎯 Inverse Kinematics (IK Solver)
-For the 6-DOF arm, enter a target XYZ coordinate and the built-in 2-link IK solver computes the required joint angles automatically. Out-of-workspace targets are detected and flagged.
+### 🎯 Real Inverse Kinematics
+Industry-style IK across all seven robots, driven by a draggable 3D target gizmo or numeric pose fields:
+
+- **6-DOF arm** — full-pose (position + orientation) damped-least-squares Jacobian IK over a Denavit–Hartenberg model anchored to published UR5e dimensions, limits, and joint speeds
+- **SCARA** — closed-form analytical IK with an elbow left/right configuration toggle and Z-slide clamping
+- **Quadruped** — body-pose mode: drag or rotate the body while per-leg 3-DOF analytical IK keeps all four feet planted
+- **Humanoid** — per-limb 2-link analytical reach with level-foot ankle compensation and a ground-projected COM marker that turns red outside the support polygon
+- **Bimanual arm** — per-side numeric position IK on shoulder pitch/yaw + elbow
+- **Mars rover** — Perseverance-style 4-corner-wheel Ackermann steering with turn-radius control and per-wheel angles
+- **Drone** — virtual thrust/yaw and pitch/roll stick pads feeding a standard X-quad motor mixer with live per-motor output bars
+
+Unreachable targets keep the best-effort pose and tint the target red — the same behavior as a real teach pendant. Joint limits are enforced inside the solver, and damping guarantees no exploding poses near singularities.
+
+### 🧠 Expert Mode
+A header toggle reveals the math driving the simulation: a live DH parameter table (θ updates as joints move), end-effector pose and 4×4 transform matrix, and a Yoshikawa manipulability bar with a singularity warning. Per-robot extras include quadruped foot positions, drone mixer outputs, and rover steer geometry. A Frames toolbar button overlays an RGB axis triad on every joint frame, and the end effector leaves a motion trace as it tracks the IK target.
 
 ### 📐 Configurable Dimensions
 Every robot's link lengths, body proportions, and actuator sizes are configurable through live sliders — changes rebuild the model in real time.
@@ -93,7 +106,7 @@ Fork this repo, go to **Settings → Pages**, set the source to `main` branch, r
 
 ## 🏗️ Architecture
 
-The entire app is ~2,500 lines of plain JavaScript split into 4 focused modules:
+The entire app is ~3,800 lines of plain JavaScript split into 8 focused modules:
 
 ```
 robo-playground/
@@ -101,9 +114,14 @@ robo-playground/
 ├── css/
 │   └── styles.css      # Full design system (CSS variables, dark/light modes)
 └── js/
-    ├── main.js         # App controller — UI wiring, state, IK, sequencer, export
-    ├── viewport.js     # Three.js scene — camera, lighting, controls, grid
-    ├── robots.js       # All 6 robot builders + joint/param config definitions
+    ├── main.js         # App controller — UI wiring, state, sequencer, export
+    ├── viewport.js     # Three.js scene — camera, lights, IK gizmo, frame triads
+    ├── robots.js       # All 7 robot builders + joint/param/kinematics configs
+    ├── kinematics.js   # Pure-math engine: DH FK, numeric Jacobian, DLS IK,
+    │                   #   analytical solvers, Ackermann, quad mixer (zero deps)
+    ├── ik-control.js   # Per-robot IK interaction: gizmo, sticks, solver wiring
+    ├── expert-panel.js # Live DH table, EE pose/matrix, manipulability readouts
+    ├── tests.js        # Browser test harness — open with ?test=1 (38 tests)
     └── materials.js    # Shared PBR material library (metal, rubber, carbon fibre…)
 ```
 
@@ -144,7 +162,11 @@ Robo Playground was designed with STEM education in mind:
 - **No hardware cost** — runs on any laptop or Chromebook
 - **Accurate proportions** — models are designed to realistic mm-scale dimensions
 - **3D printable** — students can bring their configurations into the real world
-- **IK solver** — teaches the intuition behind inverse kinematics without math
+- **DH parameters** — the same Denavit–Hartenberg convention taught in every robotics course, live in expert mode
+- **Jacobian & DLS IK** — a readable damped-least-squares solver, the method real industrial controllers use
+- **Singularities** — watch the manipulability bar collapse as the arm stretches out
+- **Static stability** — the humanoid's ground-projected COM against its foot support polygon
+- **Ackermann steering** — per-wheel steer angles and turn radius, Perseverance-style
 - **Pose sequencer** — introduces the concept of trajectory planning
 
 ---
