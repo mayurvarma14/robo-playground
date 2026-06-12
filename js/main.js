@@ -68,6 +68,14 @@ function buildAndShowRobot(key) {
   updateTelemetry();
   renderFrameTriads(); // ik.activate cleared kinHelpers — rebuild for new robot
   expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
+
+  // recorded frames belong to the previous robot's joint layout
+  state.sequence.frames = [];
+  state.sequence.playing = false;
+  state.sequence.currentFrame = 0;
+  const playIcon = document.getElementById('seq-play-icon');
+  if (playIcon) playIcon.className = 'fa-solid fa-play';
+  updateSeqUI();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -462,14 +470,14 @@ function updateSeqUI() {
   const timeline = document.getElementById('seq-timeline');
   const empty    = document.getElementById('seq-empty-msg');
 
+  // Rebuild chips
+  timeline.querySelectorAll('.keyframe-chip').forEach(c => c.remove());
+
   if (seq.frames.length === 0) {
     empty.style.display = '';
     return;
   }
   empty.style.display = 'none';
-
-  // Rebuild chips
-  timeline.querySelectorAll('.keyframe-chip').forEach(c => c.remove());
   seq.frames.forEach((frame, idx) => {
     const chip = document.createElement('div');
     chip.className = `keyframe-chip${idx === seq.currentFrame ? ' active' : ''}`;
@@ -496,14 +504,33 @@ function updateSeqUI() {
 function applyFrame(idx) {
   if (idx < 0 || idx >= seq.frames.length) return;
   const cfg = robots[state.activeRobot];
-  cfg.joints = [...seq.frames[idx]];
+  const frame = seq.frames[idx];
+  cfg.joints = [...frame.joints];
+  if (frame.bodyPose) cfg.params._bodyPose = { ...frame.bodyPose };
+  else delete cfg.params._bodyPose;
   renderJointControls();
   rebuildCurrentRobot();
 }
 
+const BODY_POSE_KEYS = ['x', 'y', 'z', 'rx', 'ry', 'rz'];
+
+// lerp two body poses; null counts as the neutral (all-zero) pose
+function lerpBodyPose(a, b, t) {
+  if (!a && !b) return null;
+  const out = {};
+  for (const k of BODY_POSE_KEYS) {
+    const av = a?.[k] || 0, bv = b?.[k] || 0;
+    out[k] = av + (bv - av) * t;
+  }
+  return out;
+}
+
 document.getElementById('seq-record').addEventListener('click', () => {
   const cfg = robots[state.activeRobot];
-  seq.frames.push([...cfg.joints]);
+  seq.frames.push({
+    joints: [...cfg.joints],
+    bodyPose: cfg.params._bodyPose ? { ...cfg.params._bodyPose } : null,
+  });
   seq.currentFrame = seq.frames.length - 1;
   updateSeqUI();
 });
@@ -571,7 +598,10 @@ function tickSequencer(time) {
   const b    = seq.frames[next];
 
   const t = seq.progress;
-  cfg.joints = a.map((av, i) => av + (b[i] - av) * t);
+  cfg.joints = a.joints.map((av, i) => av + (b.joints[i] - av) * t);
+  const bp = lerpBodyPose(a.bodyPose, b.bodyPose, t);
+  if (bp) cfg.params._bodyPose = bp;
+  else delete cfg.params._bodyPose;
   rebuildCurrentRobot();
 }
 
