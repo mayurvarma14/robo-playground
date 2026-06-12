@@ -19,8 +19,10 @@ const CT = C.clone().transpose();
 
 export class IKController {
   /**
-   * deps: { viewport, robots, getActiveKey, onJointsChanged }
+   * deps: { viewport, robots, getActiveKey, onJointsChanged, getCurrentMesh, applyJointsLight }
    * onJointsChanged(): re-applies cfg.joints to the mesh + syncs sliders.
+   * applyJointsLight(): rebuilds the mesh only (no slider sync) — per-frame animation path.
+   * getCurrentMesh(): the live robot mesh, for drone attitude tilt after rebuild.
    */
   constructor(deps) {
     this.deps = deps;
@@ -55,6 +57,8 @@ export class IKController {
     this.solver = null;        // drop the previous robot's solver closure
     this.solvePending = false; // and any solve queued during the switch
     this.fieldLabels = null;
+    this.droneTick = null;
+    this.roverTickFn = null;
     this._setWarning(false);
     document.getElementById('btn-ik-mode').style.display = 'none';
     this.mode = cfg.kinematics?.type ?? null;
@@ -76,6 +80,8 @@ export class IKController {
     else if (this.mode === 'numeric-arms') this._activateDexarm(cfg, host);
     else if (this.mode === 'quad-legs') this._activateQuad(cfg, host);
     else if (this.mode === 'limbs') this._activateHumanoid(cfg, host);
+    else if (this.mode === 'mixer') this._activateDrone(cfg, host);
+    else if (this.mode === 'ackermann') this._activateRover(cfg, host);
     else {
       host.innerHTML = '<p class="help-text">IK target control for this robot is on the dedicated panel below.</p>';
       document.getElementById('ik-status-text').textContent = 'IK Idle';
@@ -362,6 +368,117 @@ export class IKController {
     this._updateCOM(cfg);
   }
 
+  _activateDrone(cfg, host) {
+    host.innerHTML = `
+      <div class="stick-row">
+        <div class="stick-pad" id="stick-left"><div class="stick-nub"></div><span class="stick-label">Thr / Yaw</span></div>
+        <div class="stick-pad" id="stick-right"><div class="stick-nub"></div><span class="stick-label">Pitch / Roll</span></div>
+      </div>
+      <div id="motor-bars">
+        ${['FR', 'FL', 'BL', 'BR'].map(n => `
+          <div class="motor-bar"><span>${n}</span><div class="motor-fill" id="mbar-${n}"></div><span id="mval-${n}">0%</span></div>`).join('')}
+      </div>`;
+    this.droneInput = { thrust: 0.5, yaw: 0, pitch: 0, roll: 0 };
+    this.droneAttitude = { yaw: 0 };
+    this._bindStick('stick-left', (x, y) => {
+      this.droneInput.yaw = x;
+      this.droneInput.thrust = (1 - y) / 2; // top = full thrust
+    }, false);
+    this._bindStick('stick-right', (x, y) => {
+      this.droneInput.roll = x;
+      this.droneInput.pitch = -y; // pad up = nose down (forward)
+    }, true);
+
+    // continuous animation: spin props by motor output, tilt body
+    this.droneTick = () => {
+      const { thrust, roll, pitch, yaw } = this.droneInput;
+      const m = quadMix(thrust, roll, pitch, yaw);
+      ['FR', 'FL', 'BL', 'BR'].forEach((n, i) => {
+        const fill = document.getElementById(`mbar-${n}`);
+        const val = document.getElementById(`mval-${n}`);
+        if (fill) { fill.style.width = `${m[i] * 100}%`; val.textContent = `${Math.round(m[i] * 100)}%`; }
+        cfg.joints[i] = (cfg.joints[i] + m[i] * 0.9) % (Math.PI * 2);
+      });
+      this.droneAttitude.yaw -= yaw * 0.02;
+      this.deps.applyJointsLight(); // rebuild for prop spin
+      // kinematic attitude response — applied AFTER rebuild (rebuild resets rotation)
+      const mesh = this.deps.getCurrentMesh();
+      if (mesh) {
+        mesh.rotation.x = pitch * 0.35;
+        mesh.rotation.z = -roll * 0.35;
+        mesh.rotation.y = this.droneAttitude.yaw;
+      }
+      this.lastMix = m;
+    };
+  }
+
+  _bindStick(id, onMove, snapBack) {
+    const pad = document.getElementById(id);
+    const nub = pad.querySelector('.stick-nub');
+    const setNub = (x, y) => {
+      nub.style.left = `${50 + x * 38}%`;
+      nub.style.top = `${50 + y * 38}%`;
+    };
+    setNub(0, 0);
+    let dragging = false;
+    const update = (ev) => {
+      const r = pad.getBoundingClientRect();
+      const x = Math.max(-1, Math.min(1, ((ev.clientX - r.left) / r.width - 0.5) * 2));
+      const y = Math.max(-1, Math.min(1, ((ev.clientY - r.top) / r.height - 0.5) * 2));
+      setNub(x, y);
+      onMove(x, y);
+    };
+    pad.addEventListener('pointerdown', (e) => { dragging = true; pad.setPointerCapture(e.pointerId); update(e); });
+    pad.addEventListener('pointermove', (e) => { if (dragging) update(e); });
+    pad.addEventListener('pointerup', () => {
+      dragging = false;
+      if (snapBack) { setNub(0, 0); onMove(0, 0); }
+    });
+  }
+
+  _activateRover(cfg, host) {
+    host.innerHTML = `
+      <div class="param-row">
+        <label>Turn Radius <span class="param-val" id="rover-radius-label">∞ (straight)</span></label>
+        <input type="range" id="rover-radius" min="-100" max="100" step="1" value="0">
+      </div>
+      <div class="param-row">
+        <label>Drive Speed <span class="param-val" id="rover-speed-label">0</span></label>
+        <input type="range" id="rover-speed" min="-100" max="100" step="5" value="0">
+      </div>
+      <div class="help-text" id="rover-readout"></div>`;
+    this.roverSpeed = 0;
+
+    const applySteer = () => {
+      const v = parseFloat(document.getElementById('rover-radius').value);
+      const g = cfg.kinematics.geometry(cfg.params);
+      // slider maps to curvature: 0 = straight, ±100 = tightest turn whose
+      // inner-wheel angle stays within the ±50° steer joint limit
+      const maxSteer = cfg.jointLimits[1].max * DEG;
+      const rTight = g.track / 2 + (g.wheelbase / 2) / Math.tan(maxSteer);
+      const radius = v === 0 ? Infinity : (Math.sign(v) * (rTight + (100 - Math.abs(v)) * 8));
+      const a = ackermann(radius, g.wheelbase, g.track);
+      cfg.joints[1] = a.fl; cfg.joints[2] = a.fr; cfg.joints[3] = a.rl; cfg.joints[4] = a.rr;
+      document.getElementById('rover-radius-label').textContent =
+        Number.isFinite(radius) ? `${Math.round(radius)} mm ${radius > 0 ? '(left)' : '(right)'}` : '∞ (straight)';
+      document.getElementById('rover-readout').textContent =
+        `Steer °: FL ${(a.fl / DEG).toFixed(1)} · FR ${(a.fr / DEG).toFixed(1)} · RL ${(a.rl / DEG).toFixed(1)} · RR ${(a.rr / DEG).toFixed(1)}`;
+      this.deps.onJointsChanged();
+    };
+    document.getElementById('rover-radius').addEventListener('input', applySteer);
+    document.getElementById('rover-speed').addEventListener('input', (e) => {
+      this.roverSpeed = parseFloat(e.target.value) / 100;
+      document.getElementById('rover-speed-label').textContent = e.target.value;
+    });
+    applySteer();
+
+    this.roverTickFn = () => {
+      if (!this.roverSpeed) return;
+      cfg.joints[0] = (cfg.joints[0] + this.roverSpeed * 0.15) % (Math.PI * 2);
+      this.deps.applyJointsLight();
+    };
+  }
+
   _updateCOM(cfg) {
     const kin = cfg.kinematics;
     const m = kin.masses;
@@ -452,6 +569,8 @@ export class IKController {
   }
 
   _tick() {
+    if (this.droneTick && this.mode === 'mixer') this.droneTick();
+    if (this.roverTickFn && this.mode === 'ackermann') this.roverTickFn();
     if (!this.solvePending || !this.solver) return;
     this.solvePending = false;
     const ok = this.solver(this.target);

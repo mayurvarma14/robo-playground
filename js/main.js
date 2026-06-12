@@ -238,6 +238,8 @@ const ik = new IKController({
   robots,
   getActiveKey: () => state.activeRobot,
   onJointsChanged: () => { syncJointInputs(); rebuildCurrentRobot(); },
+  getCurrentMesh: () => currentMesh,
+  applyJointsLight: () => rebuildCurrentRobot(),
 });
 
 // ─────────────────────────────────────────────────────────────
