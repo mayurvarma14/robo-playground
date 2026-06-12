@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export class Viewport {
   constructor() {
@@ -14,12 +15,9 @@ export class Viewport {
     this.platformMesh = null;
     this.floorMesh    = null;
 
-    this.ambientLight = null;
     this.hemiLight    = null;
     this.sunLight     = null;
-    this.fillLight    = null;
     this.rimLight     = null;
-    this.backLight    = null;
 
     this.showGrid  = true;
     this.showAxes  = true;
@@ -47,6 +45,12 @@ export class Viewport {
     this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.container.appendChild(this.renderer.domElement);
+
+    // Studio environment — gives PBR metals real reflections (no asset files)
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    this.scene.environment = this.envTexture;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -88,43 +92,29 @@ export class Viewport {
   }
 
   _buildLighting() {
-    // Strong ambient so nothing is ever pitch-black
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-    this.scene.add(this.ambientLight);
-
-    // Hemisphere: warm sky, cooler ground bounce
-    this.hemiLight = new THREE.HemisphereLight(0xc8ddf0, 0x9aabb8, 1.0);
+    // The environment map supplies ambient + fill; physical lights only shape
+    // form (key) and separate the silhouette (rim).
+    this.hemiLight = new THREE.HemisphereLight(0xc8ddf0, 0x6a7686, 0.35);
     this.hemiLight.position.set(0, 500, 0);
     this.scene.add(this.hemiLight);
 
-    // Key sun — main shadow caster
-    this.sunLight = new THREE.DirectionalLight(0xfff8f0, 1.8);
+    this.sunLight = new THREE.DirectionalLight(0xfff4e8, 2.4);
     this.sunLight.position.set(350, 600, 300);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.set(2048, 2048);
     this.sunLight.shadow.camera.near   = 10;
     this.sunLight.shadow.camera.far    = 2000;
-    this.sunLight.shadow.camera.left   = -500;
-    this.sunLight.shadow.camera.right  = 500;
-    this.sunLight.shadow.camera.top    = 500;
-    this.sunLight.shadow.camera.bottom = -500;
-    this.sunLight.shadow.bias = -0.0003;
+    this.sunLight.shadow.camera.left   = -400;
+    this.sunLight.shadow.camera.right  = 400;
+    this.sunLight.shadow.camera.top    = 700;
+    this.sunLight.shadow.camera.bottom = -200;
+    this.sunLight.shadow.bias = -0.0002;
+    this.sunLight.shadow.radius = 4;
     this.scene.add(this.sunLight);
 
-    // Cool fill from opposite side
-    this.fillLight = new THREE.DirectionalLight(0xb0d0ff, 1.0);
-    this.fillLight.position.set(-300, 400, -250);
-    this.scene.add(this.fillLight);
-
-    // Warm back rim
-    this.rimLight = new THREE.DirectionalLight(0xffd6a0, 0.6);
-    this.rimLight.position.set(0, 200, -500);
+    this.rimLight = new THREE.DirectionalLight(0xbcd8ff, 0.9);
+    this.rimLight.position.set(-250, 300, -450);
     this.scene.add(this.rimLight);
-
-    // Low under-fill (lights underside)
-    this.backLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    this.backLight.position.set(0, -200, 0);
-    this.scene.add(this.backLight);
   }
 
   _buildFloor() {
@@ -166,24 +156,20 @@ export class Viewport {
       this.scene.fog = new THREE.Fog(0xdce6f0, 2000, 7000);
       if (this.platformMesh) this.platformMesh.material.color.setHex(0xa8bdd0);
       this._rebuildGrid(0x7090b0, 0xb8ccd8);
-      if (this.ambientLight) this.ambientLight.intensity = 1.8;
-      if (this.hemiLight)    this.hemiLight.intensity    = 1.4;
-      if (this.sunLight)     this.sunLight.intensity     = 2.2;
-      if (this.fillLight)    this.fillLight.intensity    = 1.2;
-      if (this.rimLight)     this.rimLight.intensity     = 0.6;
-      if (this.backLight)    this.backLight.intensity    = 0.7;
+      this.renderer.toneMappingExposure = 1.15;
+      if (this.hemiLight) this.hemiLight.intensity = 0.5;
+      if (this.sunLight)  this.sunLight.intensity  = 2.8;
+      if (this.rimLight)  this.rimLight.intensity  = 0.7;
     } else {
       // Slate-blue dark — comfortable engineering software tone, NOT a black void
       this.scene.background = new THREE.Color(0x1c2a3a);
       this.scene.fog = new THREE.Fog(0x1c2a3a, 2500, 8000);
       if (this.platformMesh) this.platformMesh.material.color.setHex(0x3a4a60);
       this._rebuildGrid(0x4a6080, 0x2a3a50);
-      if (this.ambientLight) this.ambientLight.intensity = 1.2;
-      if (this.hemiLight)    this.hemiLight.intensity    = 1.0;
-      if (this.sunLight)     this.sunLight.intensity     = 1.8;
-      if (this.fillLight)    this.fillLight.intensity    = 1.0;
-      if (this.rimLight)     this.rimLight.intensity     = 0.6;
-      if (this.backLight)    this.backLight.intensity    = 0.5;
+      this.renderer.toneMappingExposure = 1.0;
+      if (this.hemiLight) this.hemiLight.intensity = 0.35;
+      if (this.sunLight)  this.sunLight.intensity  = 2.4;
+      if (this.rimLight)  this.rimLight.intensity  = 0.9;
     }
   }
 
@@ -307,9 +293,8 @@ export class Viewport {
 
   setBrightness(multiplier) {
     const isLight = this.theme === 'light';
-    if (this.ambientLight) this.ambientLight.intensity = multiplier * (isLight ? 1.8 : 1.2);
-    if (this.sunLight)     this.sunLight.intensity     = multiplier * (isLight ? 2.2 : 1.8);
-    if (this.fillLight)    this.fillLight.intensity    = multiplier * (isLight ? 1.2 : 1.0);
-    if (this.hemiLight)    this.hemiLight.intensity    = multiplier * (isLight ? 1.4 : 1.0);
+    if (this.sunLight)  this.sunLight.intensity  = multiplier * (isLight ? 2.8 : 2.4);
+    if (this.hemiLight) this.hemiLight.intensity = multiplier * (isLight ? 0.5 : 0.35);
+    if (this.rimLight)  this.rimLight.intensity  = multiplier * (isLight ? 0.7 : 0.9);
   }
 }
