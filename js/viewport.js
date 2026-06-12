@@ -121,20 +121,55 @@ export class Viewport {
     // Soft shadow catcher
     this.floorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(6000, 6000),
-      new THREE.ShadowMaterial({ opacity: 0.12 })
+      new THREE.ShadowMaterial({ opacity: 0.25 })
     );
     this.floorMesh.rotation.x = -Math.PI / 2;
     this.floorMesh.receiveShadow = true;
     this.scene.add(this.floorMesh);
 
-    // Platform disc
+    // Studio floor — dark, slightly glossy so it picks up the environment
+    this.studioFloor = new THREE.Mesh(
+      new THREE.CircleGeometry(2800, 64),
+      new THREE.MeshStandardMaterial({ color: 0x141c28, roughness: 0.35, metalness: 0.55 })
+    );
+    this.studioFloor.rotation.x = -Math.PI / 2;
+    this.studioFloor.position.y = -8.5;
+    this.studioFloor.receiveShadow = true;
+    this.scene.add(this.studioFloor);
+
+    // Contact-shadow vignette under the robot (radial gradient canvas)
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const ctx = cv.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+    this.contactShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(640, 640),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false })
+    );
+    this.contactShadow.rotation.x = -Math.PI / 2;
+    this.contactShadow.position.y = 0.2;
+    this.scene.add(this.contactShadow);
+
+    // Platform disc — brushed bezel ring + face
     this.platformMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(220, 230, 8, 64),
-      new THREE.MeshStandardMaterial({ color: 0x3a4a60, roughness: 0.7, metalness: 0.15 })
+      new THREE.CylinderGeometry(220, 230, 8, 96),
+      new THREE.MeshStandardMaterial({ color: 0x2c3a50, roughness: 0.45, metalness: 0.6 })
     );
     this.platformMesh.position.y = -4;
     this.platformMesh.receiveShadow = true;
     this.scene.add(this.platformMesh);
+
+    this.platformRing = new THREE.Mesh(
+      new THREE.TorusGeometry(222, 2.5, 12, 96),
+      new THREE.MeshStandardMaterial({ color: 0x9fb4cc, roughness: 0.25, metalness: 0.9 })
+    );
+    this.platformRing.rotation.x = -Math.PI / 2;
+    this.platformRing.position.y = 0.5;
+    this.scene.add(this.platformRing);
 
     // Grid
     this.gridHelper = new THREE.GridHelper(1200, 30, 0x4a6080, 0x2a3a50);
@@ -155,6 +190,10 @@ export class Viewport {
       this.scene.background = new THREE.Color(0xdce6f0);
       this.scene.fog = new THREE.Fog(0xdce6f0, 2000, 7000);
       if (this.platformMesh) this.platformMesh.material.color.setHex(0xa8bdd0);
+      if (this.studioFloor) {
+        this.studioFloor.material.color.setHex(0x9aa8ba);
+        this.studioFloor.material.roughness = 0.5;
+      }
       this._rebuildGrid(0x7090b0, 0xb8ccd8);
       this.renderer.toneMappingExposure = 1.15;
       if (this.hemiLight) this.hemiLight.intensity = 0.5;
@@ -165,6 +204,10 @@ export class Viewport {
       this.scene.background = new THREE.Color(0x1c2a3a);
       this.scene.fog = new THREE.Fog(0x1c2a3a, 2500, 8000);
       if (this.platformMesh) this.platformMesh.material.color.setHex(0x3a4a60);
+      if (this.studioFloor) {
+        this.studioFloor.material.color.setHex(0x141c28);
+        this.studioFloor.material.roughness = 0.35;
+      }
       this._rebuildGrid(0x4a6080, 0x2a3a50);
       this.renderer.toneMappingExposure = 1.0;
       if (this.hemiLight) this.hemiLight.intensity = 0.35;
