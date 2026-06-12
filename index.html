@@ -36,6 +36,9 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="icon-btn" id="btn-expert" title="Expert Mode (show the math)">
+          <i class="fa-solid fa-square-root-variable"></i>
+        </button>
         <button class="icon-btn" id="btn-theme" title="Toggle Theme">
           <i class="fa-solid fa-sun" id="theme-icon"></i>
         </button>
@@ -153,6 +156,12 @@
         <!-- Robot name badge -->
         <div id="robot-name-badge">
           <span id="active-robot-name">6-DOF Robotic Arm</span>
+        </div>
+
+        <!-- Expert mode panel -->
+        <div id="expert-panel" class="hidden">
+          <div class="expert-title">Kinematics <span id="expert-anchor"></span></div>
+          <div id="expert-content"></div>
         </div>
       </section>
 

@@ -5,6 +5,7 @@
 import { Viewport } from './viewport.js';
 import { ROBOTS } from './robots.js';
 import { IKController } from './ik-control.js';
+import { ExpertPanel } from './expert-panel.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
 if (new URLSearchParams(location.search).has('test')) import('./tests.js');
@@ -63,6 +64,7 @@ function buildAndShowRobot(key) {
   renderParamControls();
   renderExportList();
   updateTelemetry();
+  expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -207,6 +209,7 @@ function rebuildCurrentRobot() {
   if (state.wireframe) viewport.setWireframe(true);
   updateTelemetry();
   renderExportList();
+  expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
 }
 
 // Reset pose
@@ -241,6 +244,11 @@ const ik = new IKController({
   getCurrentMesh: () => currentMesh,
   applyJointsLight: () => rebuildCurrentRobot(),
 });
+
+// ─────────────────────────────────────────────────────────────
+// EXPERT PANEL
+// ─────────────────────────────────────────────────────────────
+const expertPanel = new ExpertPanel();
 
 // ─────────────────────────────────────────────────────────────
 // PARAM CONTROLS (Config tab)

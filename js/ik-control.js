@@ -528,6 +528,7 @@ export class IKController {
     const minZ = Math.min(...feet.map(f => f.z)) - 45, maxZ = Math.max(...feet.map(f => f.z)) + 45;
     const inside = cx >= minX && cx <= maxX && cz >= minZ && cz <= maxZ;
     this.comMarker.material.color.setHex(inside ? 0x22c55e : 0xef4444);
+    this.lastCOM = { x: cx, z: cz, inside }; // consumed by expert panel
   }
 
   _buildPoseFields(labels) {
