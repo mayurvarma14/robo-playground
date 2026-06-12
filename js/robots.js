@@ -118,6 +118,25 @@ function bearing(outerR, width) {
   return ring(outerR - 5, outerR, width, 32, MAT.chrome);
 }
 
+// Joint actuator drum lying across a joint axis (X): black anodised body,
+// cyan accent ring + end cap on each face. Name goes on the body mesh so it
+// stays in the STL export list.
+function actuator(r, w, name) {
+  const g = new THREE.Group();
+  g.add(cyl(r, r, w, 24, MAT.blackAnodised, name));
+  for (const s of [-1, 1]) {
+    const accent = mesh(new THREE.TorusGeometry(r * 0.62, 1.1, 8, 24), MAT.cyan);
+    accent.rotation.x = Math.PI / 2;
+    accent.position.y = s * (w / 2 + 0.4);
+    g.add(accent);
+    const cap = cyl(r * 0.78, r * 0.78, 2, 24, MAT.blackAnodised);
+    cap.position.y = s * (w / 2 + 1);
+    g.add(cap);
+  }
+  g.rotation.z = Math.PI / 2;
+  return g;
+}
+
 // Rounded-end link (structural arm segment)
 function roundedLink(length, width, depth, mat, name) {
   const shape = new THREE.Shape();
@@ -175,10 +194,15 @@ export function buildArm(joints, params) {
   const baseGroup = new THREE.Group();
   root.add(baseGroup);
 
-  // base plate disc
-  const baseDisk = cyl(90, 100, 18, 48, MAT.darkSteel, 'Base Mount Plate');
-  baseDisk.position.y = 9;
-  baseGroup.add(baseDisk);
+  // base pedestal — chamfered aluminium disc, bolt circle on the top face
+  const basePedestal = chamferCyl(95, 18, 4, 48, MAT.aluminium);
+  basePedestal.children[0].name = 'Base Mount Plate';
+  basePedestal.position.y = 9;
+  baseGroup.add(basePedestal);
+
+  const baseBolts = boltCircle(75, 8, MAT.steelDark);
+  baseBolts.position.y = 18;
+  baseGroup.add(baseBolts);
 
   // base top ring bearing
   const b0 = bearing(60, 10);
@@ -190,9 +214,16 @@ export function buildArm(joints, params) {
   turret.rotation.y = joints[0];
   baseGroup.add(turret);
 
-  const turretBody = cyl(42, 48, 50, 32, MAT.blackAnodised, 'Base Turret');
+  const turretBody = chamferCyl(46, 50, 5, 32, MAT.blackAnodised);
+  turretBody.children[0].name = 'Base Turret';
   turretBody.position.y = 45;
   turret.add(turretBody);
+
+  // turret accent ring
+  const turretAccent = mesh(new THREE.TorusGeometry(43, 1.2, 8, 32), MAT.cyan);
+  turretAccent.rotation.x = Math.PI / 2;
+  turretAccent.position.y = 62;
+  turret.add(turretAccent);
 
   // shoulder bearing
   const b1 = bearing(36, 12);
@@ -205,14 +236,17 @@ export function buildArm(joints, params) {
   upperGroup.rotation.z = joints[1];
   turret.add(upperGroup);
 
-  const upperLink = trussBar(l2, 32, 24, MAT.carbonFiber, 'Upper Arm Truss');
-  upperLink.rotation.z = Math.PI / 2;
+  const upperLink = rbox(32, l2, 24, 8, MAT.whitePolycarbonate, 'Upper Arm Housing');
   upperLink.position.y = l2 / 2;
   upperGroup.add(upperLink);
 
+  // raised aluminium spine along the outer face
+  const upperSpine = rbox(7, l2 * 0.78, 4, 2, MAT.aluminium);
+  upperSpine.position.set(0, l2 / 2, 13.5);
+  upperGroup.add(upperSpine);
+
   // shoulder actuator
-  const shoulderActuator = cyl(18, 18, 30, 20, MAT.darkSteel, 'Shoulder Actuator');
-  shoulderActuator.rotation.z = Math.PI / 2;
+  const shoulderActuator = actuator(20, 36, 'Shoulder Actuator');
   shoulderActuator.position.y = 2;
   upperGroup.add(shoulderActuator);
 
@@ -227,13 +261,15 @@ export function buildArm(joints, params) {
   forearmGroup.rotation.z = joints[2];
   upperGroup.add(forearmGroup);
 
-  const foreLink = trussBar(l3, 26, 20, MAT.carbonFiber, 'Forearm Truss');
-  foreLink.rotation.z = Math.PI / 2;
+  const foreLink = rbox(26, l3, 20, 8, MAT.whitePolycarbonate, 'Forearm Housing');
   foreLink.position.y = l3 / 2;
   forearmGroup.add(foreLink);
 
-  const elbowActuator = cyl(15, 15, 26, 20, MAT.darkSteel, 'Elbow Actuator');
-  elbowActuator.rotation.z = Math.PI / 2;
+  const foreSpine = rbox(6, l3 * 0.74, 3.5, 1.7, MAT.aluminium);
+  foreSpine.position.set(0, l3 / 2, 11.4);
+  forearmGroup.add(foreSpine);
+
+  const elbowActuator = actuator(16, 32, 'Elbow Actuator');
   elbowActuator.position.y = 2;
   forearmGroup.add(elbowActuator);
 
@@ -248,8 +284,7 @@ export function buildArm(joints, params) {
   wristGroup.rotation.z = joints[3];
   forearmGroup.add(wristGroup);
 
-  const wristActuator = cyl(12, 12, 20, 20, MAT.chrome, 'Wrist 1 Actuator');
-  wristActuator.rotation.z = Math.PI / 2;
+  const wristActuator = actuator(13, 24, 'Wrist 1 Actuator');
   wristActuator.position.y = 2;
   wristGroup.add(wristActuator);
 
@@ -258,7 +293,7 @@ export function buildArm(joints, params) {
   rollGroup.rotation.y = joints[4];
   wristGroup.add(rollGroup);
 
-  const wristLink = roundedLink(l4, 20, 16, MAT.aluminium, 'Wrist Link');
+  const wristLink = capsule(10, Math.max(l4 - 20, 8), MAT.whitePolycarbonate, 'Wrist Link');
   wristLink.position.y = l4 / 2;
   rollGroup.add(wristLink);
 
@@ -272,8 +307,7 @@ export function buildArm(joints, params) {
   wrist2Group.rotation.z = joints[5];
   rollGroup.add(wrist2Group);
 
-  const wrist2Actuator = cyl(10, 10, 18, 20, MAT.chrome, 'Wrist 3 Actuator');
-  wrist2Actuator.rotation.z = Math.PI / 2;
+  const wrist2Actuator = actuator(11, 20, 'Wrist 3 Actuator');
   wrist2Group.add(wrist2Actuator);
 
   // ── FLANGE + GRIPPER (FLANGE = 30 must match the DH table)
@@ -281,7 +315,8 @@ export function buildArm(joints, params) {
   gripGroup.position.y = ARM_FLANGE;
   wrist2Group.add(gripGroup);
 
-  const gripBase = cyl(14, 14, 18, 20, MAT.blackAnodised, 'Gripper Base');
+  const gripBase = chamferCyl(14, 18, 3, 20, MAT.blackAnodised);
+  gripBase.children[0].name = 'Gripper Base';
   gripBase.position.y = -9;
   gripGroup.add(gripBase);
 
@@ -290,15 +325,33 @@ export function buildArm(joints, params) {
     const claw = new THREE.Group();
     claw.position.set(side * clawGap / 2, 0, 0);
 
-    const finger = box(6, 30, 8, MAT.darkSteel, side > 0 ? 'Gripper Finger Right' : 'Gripper Finger Left');
+    const finger = rbox(6, 30, 8, 2, MAT.aluminium, side > 0 ? 'Gripper Finger Right' : 'Gripper Finger Left');
     finger.position.y = 15;
     claw.add(finger);
+
+    // rubber grip pad on the inner face
+    const pad = box(2, 20, 6, MAT.rubber);
+    pad.position.set(-side * 4, 16, 0);
+    claw.add(pad);
 
     const tip = box(8, 10, 10, MAT.rubber, 'Gripper Tip');
     tip.position.y = 34;
     claw.add(tip);
     gripGroup.add(claw);
   }
+
+  // decorative cable conduit following the zero-pose arm (root-parented)
+  const shoulderY = l1 + 20;
+  const conduitCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 48, 34),
+    new THREE.Vector3(0, shoulderY - 8, 27),
+    new THREE.Vector3(0, shoulderY + l2 * 0.5, 19),
+    new THREE.Vector3(0, shoulderY + l2, 23),
+    new THREE.Vector3(0, shoulderY + l2 + l3 * 0.55, 16),
+    new THREE.Vector3(0, shoulderY + l2 + l3 - 6, 12),
+  ]);
+  const conduit = mesh(new THREE.TubeGeometry(conduitCurve, 32, 3.5, 8, false), MAT.rubber);
+  root.add(conduit);
 
   return root;
 }
