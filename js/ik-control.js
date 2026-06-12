@@ -7,6 +7,7 @@ import {
   DHChain, solvePositionIK, scaraIK, twoLinkIK, legIK, legFK, ackermann, quadMix,
   worldToDH, dhToWorld, DEG,
 } from './kinematics.js';
+import { ROVER_ARM_L1, ROVER_ARM_L2 } from './robots.js';
 
 // DH <-> world basis change for orientations: C maps DH coords to world
 const C = new THREE.Matrix4().set(
@@ -453,8 +454,39 @@ export class IKController {
         <label>Drive Speed <span class="param-val" id="rover-speed-label">0</span></label>
         <input type="range" id="rover-speed" min="-100" max="100" step="5" value="0">
       </div>
-      <div class="help-text" id="rover-readout"></div>`;
+      <div class="help-text" id="rover-readout"></div>
+      <div class="param-row"><label>Sample Arm Target (2-link IK)</label></div>
+      <div class="ik-grid">
+        <div class="ik-field"><label for="rover-arm-fwd">Fwd</label>
+          <input type="number" id="rover-arm-fwd" step="5" value="0"><span class="ik-unit">mm</span></div>
+        <div class="ik-field"><label for="rover-arm-up">Up</label>
+          <input type="number" id="rover-arm-up" step="5" value="0"><span class="ik-unit">mm</span></div>
+      </div>`;
     this.roverSpeed = 0;
+
+    // 2-link sample-arm IK: target is forward distance / height from the
+    // shoulder mount in the rover's vertical plane
+    const fwdIn = document.getElementById('rover-arm-fwd');
+    const upIn = document.getElementById('rover-arm-up');
+    const armFK = () => ({
+      f: ROVER_ARM_L1 * Math.cos(cfg.joints[5]) + ROVER_ARM_L2 * Math.cos(cfg.joints[5] + cfg.joints[6]),
+      h: ROVER_ARM_L1 * Math.sin(cfg.joints[5]) + ROVER_ARM_L2 * Math.sin(cfg.joints[5] + cfg.joints[6]),
+    });
+    const seed = armFK();
+    fwdIn.value = seed.f.toFixed(0);
+    upIn.value = seed.h.toFixed(0);
+    const solveArm = () => {
+      const f = parseFloat(fwdIn.value) || 0;
+      const h = parseFloat(upIn.value) || 0;
+      const r = twoLinkIK(f, h, ROVER_ARM_L1, ROVER_ARM_L2, -1);
+      const lim5 = cfg.jointLimits[5], lim6 = cfg.jointLimits[6];
+      cfg.joints[5] = Math.max(lim5.min * DEG, Math.min(lim5.max * DEG, r.q1));
+      cfg.joints[6] = Math.max(lim6.min * DEG, Math.min(lim6.max * DEG, r.q2));
+      this._setWarning(!r.reachable, 'Arm target out of reach');
+      this.deps.onJointsChanged();
+    };
+    fwdIn.addEventListener('change', solveArm);
+    upIn.addEventListener('change', solveArm);
 
     const applySteer = () => {
       const v = parseFloat(document.getElementById('rover-radius').value);

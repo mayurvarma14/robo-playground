@@ -3,7 +3,7 @@
  * Results go to console and a fixed banner.
  */
 import * as K from './kinematics.js';
-import { ROBOTS, armDHRows, ARM_FLANGE, dexArmChainFK } from './robots.js';
+import { ROBOTS, armDHRows, ARM_FLANGE, dexArmChainFK, ROVER_ARM_L1, ROVER_ARM_L2 } from './robots.js';
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -325,6 +325,16 @@ test('dexarm numeric IK reaches forward target', () => {
   const target = dexArmChainFK([0.3, 0.5, 1.0], p, 1);
   const r = K.solvePositionIK((q) => dexArmChainFK(q, p, 1), [0, 0, 0.5], target);
   if (!r.converged) throw new Error(`posErr=${r.posErr}`);
+});
+
+test('rover sample-arm telemetry fk matches twoLinkFK', () => {
+  const p = ROBOTS.rover.params;
+  const q1 = 0.5, q2 = -0.9;
+  const t = K.twoLinkFK(q1, q2, ROVER_ARM_L1, ROVER_ARM_L2);
+  const f = ROBOTS.rover.fk([0, 0, 0, 0, 0, q1, q2], p);
+  approx(f.x, p.chassisW / 2 - 10, 1e-6, 'x');
+  approx(f.y, p.wheelR + 30 + 28 + t.y, 1e-6, 'y');
+  approx(f.z, -p.chassisL / 2 + 30 - t.x, 1e-6, 'z');
 });
 
 // ── summary (keep at end of file; later tasks insert tests ABOVE this block)

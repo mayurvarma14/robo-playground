@@ -538,6 +538,10 @@ export function buildQuadruped(joints, params) {
 // ─────────────────────────────────────────────────────────────
 // ROBOT 4 — MARS ROVER (ROCKER-BOGIE)
 // ─────────────────────────────────────────────────────────────
+// Sample-arm link lengths — shared by the mesh, telemetry FK, and arm IK
+export const ROVER_ARM_L1 = 70;
+export const ROVER_ARM_L2 = 60;
+
 export function buildRover(joints, params) {
   const { chassisL = 200, chassisW = 140, wheelR = 40, wheelW = 20 } = params;
   const root = new THREE.Group();
@@ -571,11 +575,45 @@ export function buildRover(joints, params) {
   camHead.position.set(0, bodyY + 90, -chassisL / 2 + 20);
   root.add(camHead);
 
-  // Robotic arm (front right)
-  const armBase = box(16, 60, 16, MAT.aluminium, 'Sample Arm');
-  armBase.position.set(chassisW / 2 - 10, bodyY + 20, -chassisL / 2 + 30);
-  armBase.rotation.z = -Math.PI / 6;
-  root.add(armBase);
+  // Sample arm — 2-link (shoulder pitch + elbow) reaching in the rover's
+  // forward vertical plane. RotX(q) lifts the forward (−Z) link up by q.
+  const armMount = new THREE.Group();
+  armMount.name = 'ArmMount';
+  armMount.position.set(chassisW / 2 - 10, bodyY + 28, -chassisL / 2 + 30);
+  root.add(armMount);
+
+  const mountPost = cyl(8, 10, 24, 12, MAT.aluminium, 'Arm Mount Post');
+  mountPost.position.y = -12;
+  armMount.add(mountPost);
+
+  const shoulderGroup = new THREE.Group();
+  shoulderGroup.rotation.x = joints[5];
+  armMount.add(shoulderGroup);
+
+  const shoulderJoint = cyl(7, 7, 18, 14, MAT.chrome, 'Arm Shoulder Joint');
+  shoulderJoint.rotation.z = Math.PI / 2;
+  shoulderGroup.add(shoulderJoint);
+
+  const upperLink = box(10, 10, ROVER_ARM_L1, MAT.aluminium, 'Arm Upper Link');
+  upperLink.position.z = -ROVER_ARM_L1 / 2;
+  shoulderGroup.add(upperLink);
+
+  const elbowGroup = new THREE.Group();
+  elbowGroup.position.z = -ROVER_ARM_L1;
+  elbowGroup.rotation.x = joints[6];
+  shoulderGroup.add(elbowGroup);
+
+  const elbowJoint = cyl(6, 6, 16, 14, MAT.chrome, 'Arm Elbow Joint');
+  elbowJoint.rotation.z = Math.PI / 2;
+  elbowGroup.add(elbowJoint);
+
+  const foreLink = box(8, 8, ROVER_ARM_L2, MAT.aluminium, 'Arm Forearm Link');
+  foreLink.position.z = -ROVER_ARM_L2 / 2;
+  elbowGroup.add(foreLink);
+
+  const scoop = box(16, 8, 14, MAT.darkSteel, 'Arm Scoop');
+  scoop.position.z = -ROVER_ARM_L2 - 6;
+  elbowGroup.add(scoop);
 
   // 6 wheels — rocker-bogie style
   const wheelPositions = [
@@ -1218,15 +1256,26 @@ export const ROBOTS = {
   rover: {
     name: 'Mars Rover',
     builder: buildRover,
-    fk: null,
-    joints: [0, 0, 0, 0, 0],
-    jointNames: ['Wheel Spin', 'FL Steer', 'FR Steer', 'RL Steer', 'RR Steer'],
+    // telemetry: sample-arm scoop position (world, Y up)
+    fk: (joints, p) => {
+      const f = ROVER_ARM_L1 * Math.cos(joints[5]) + ROVER_ARM_L2 * Math.cos(joints[5] + joints[6]);
+      const h = ROVER_ARM_L1 * Math.sin(joints[5]) + ROVER_ARM_L2 * Math.sin(joints[5] + joints[6]);
+      return {
+        x: p.chassisW / 2 - 10,
+        y: p.wheelR + 30 + 28 + h,
+        z: -p.chassisL / 2 + 30 - f,
+      };
+    },
+    joints: [0, 0, 0, 0, 0, 0.6, -1.2],
+    jointNames: ['Wheel Spin', 'FL Steer', 'FR Steer', 'RL Steer', 'RR Steer', 'Arm Shoulder', 'Arm Elbow'],
     jointLimits: [
       { min: -360, max: 360, step: 5, isAngle: true },
       { min: -50,  max: 50,  step: 1, isAngle: true },
       { min: -50,  max: 50,  step: 1, isAngle: true },
       { min: -50,  max: 50,  step: 1, isAngle: true },
       { min: -50,  max: 50,  step: 1, isAngle: true },
+      { min: -30,  max: 100, step: 1, isAngle: true },
+      { min: -150, max: 10,  step: 1, isAngle: true },
     ],
     params: { chassisL: 200, chassisW: 140, wheelR: 40, wheelW: 20 },
     paramDefs: [
