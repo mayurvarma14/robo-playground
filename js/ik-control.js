@@ -399,7 +399,12 @@ export class IKController {
         if (fill) { fill.style.width = `${m[i] * 100}%`; val.textContent = `${Math.round(m[i] * 100)}%`; }
         cfg.joints[i] = (cfg.joints[i] + m[i] * 0.9) % (Math.PI * 2);
       });
-      this.droneAttitude.yaw -= yaw * 0.02;
+      // motors idle and attitude inputs centred: mesh isn't moving, skip the rebuild
+      if (m.every(v => v === 0) && roll === 0 && pitch === 0 && yaw === 0) {
+        this.lastMix = m;
+        return;
+      }
+      this.droneAttitude.yaw = (this.droneAttitude.yaw - yaw * 0.02) % (Math.PI * 2);
       this.deps.applyJointsLight(); // rebuild for prop spin
       // kinematic attitude response — applied AFTER rebuild (rebuild resets rotation)
       const mesh = this.deps.getCurrentMesh();
@@ -430,10 +435,12 @@ export class IKController {
     };
     pad.addEventListener('pointerdown', (e) => { dragging = true; pad.setPointerCapture(e.pointerId); update(e); });
     pad.addEventListener('pointermove', (e) => { if (dragging) update(e); });
-    pad.addEventListener('pointerup', () => {
+    const release = () => {
       dragging = false;
       if (snapBack) { setNub(0, 0); onMove(0, 0); }
-    });
+    };
+    pad.addEventListener('pointerup', release);
+    pad.addEventListener('pointercancel', release);
   }
 
   _activateRover(cfg, host) {
