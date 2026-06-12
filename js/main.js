@@ -2,8 +2,10 @@
  * main.js — App entry point and controller
  * Manages UI state, robot switching, joint controls, sequencer, and exports.
  */
+import * as THREE from 'three';
 import { Viewport } from './viewport.js';
 import { ROBOTS } from './robots.js';
+import { DHChain, dhToWorld } from './kinematics.js';
 import { IKController } from './ik-control.js';
 import { ExpertPanel } from './expert-panel.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
@@ -64,6 +66,7 @@ function buildAndShowRobot(key) {
   renderParamControls();
   renderExportList();
   updateTelemetry();
+  renderFrameTriads(); // ik.activate cleared kinHelpers — rebuild for new robot
   expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
 }
 
@@ -134,6 +137,63 @@ btnWire.addEventListener('click', () => {
   state.wireframe = btnWire.classList.contains('active');
   viewport.setWireframe(state.wireframe);
 });
+
+// ── Joint frame triads ──
+// Triads live in their own cached subgroup inside viewport.kinHelpers so
+// toggling/refreshing them never touches the IK controller's COM marker
+// (which shares kinHelpers), and triad geometries/materials are reused
+// across joint changes instead of being recreated (and leaked) per rebuild.
+let showFrames = false;
+const triadGroup = new THREE.Group();
+const triadPool = [];
+const triadMat = new THREE.Matrix4();
+
+const btnFrames = document.getElementById('btn-frames');
+btnFrames.addEventListener('click', () => {
+  showFrames = !showFrames;
+  btnFrames.classList.toggle('active', showFrames);
+  renderFrameTriads();
+});
+
+function renderFrameTriads() {
+  triadGroup.visible = showFrames;
+  if (!showFrames) return;
+  // ik.activate() clears kinHelpers on robot switch — re-attach if detached
+  if (!triadGroup.parent) viewport.addKinHelper(triadGroup);
+
+  const cfg = robots[state.activeRobot];
+  const kin = cfg.kinematics;
+  if (!kin?.rows) { // triads only for DH robots this cycle
+    for (const t of triadPool) t.visible = false;
+    return;
+  }
+
+  const chain = new DHChain((q) => kin.rows(q, cfg.params));
+  const n = kin.rows(cfg.joints, cfg.params).length;
+  const { frames } = chain.fk(cfg.joints.slice(0, n));
+
+  while (triadPool.length < frames.length) {
+    const t = viewport.makeTriad();
+    triadPool.push(t);
+    triadGroup.add(t);
+  }
+  triadPool.forEach((t, i) => { t.visible = i < frames.length; });
+
+  frames.forEach((T, i) => {
+    const triad = triadPool[i];
+    const [x, y, z] = dhToWorld([T[0][3], T[1][3], T[2][3]]);
+    triad.position.set(x, y, z);
+    // orientation: world R = C · R_dh · Cᵀ — world basis columns are images
+    // of DH basis vectors under (x,y,z)→(x,z,−y)
+    triadMat.set(
+      T[0][0], T[0][1], T[0][2], 0,
+      T[2][0], T[2][1], T[2][2], 0,
+      -T[1][0], -T[1][1], -T[1][2], 0,
+      0, 0, 0, 1
+    );
+    triad.quaternion.setFromRotationMatrix(triadMat);
+  });
+}
 
 document.getElementById('btn-reset-cam').addEventListener('click', () => {
   viewport.setView('iso');
@@ -209,6 +269,7 @@ function rebuildCurrentRobot() {
   if (state.wireframe) viewport.setWireframe(true);
   updateTelemetry();
   renderExportList();
+  renderFrameTriads();
   expertPanel.update(robots[state.activeRobot], { mix: ik.lastMix, com: ik.lastCOM });
 }
 
