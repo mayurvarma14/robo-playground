@@ -283,8 +283,12 @@ export class IKController {
       <p class="help-text">2-link analytical IK per limb. Green disc = ground-projected COM; red = outside support polygon.</p>`;
 
     const kin = cfg.kinematics;
-    const arm = kin.arm(cfg.params), leg = kin.leg(cfg.params);
-    const rootY = kin.rootY(cfg.params);
+    // dimensions read live so param-slider changes stay accurate
+    const geom = () => ({
+      arm: kin.arm(cfg.params),
+      leg: kin.leg(cfg.params),
+      rootY: kin.rootY(cfg.params),
+    });
 
     // the planar limb model assumes torso yaw and shoulder rolls are zero —
     // zero them on entry so targets and COM match the mesh
@@ -313,6 +317,7 @@ export class IKController {
 
     const placeTarget = () => {
       const m = jointMap[limb];
+      const { arm, leg, rootY } = geom();
       if (m.s !== undefined) {
         const qs = cfg.joints[m.s], qe = cfg.joints[m.e];
         // arm FK (frontal plane): hangs −Y, RotZ swing
@@ -332,6 +337,7 @@ export class IKController {
 
     this.solver = (t) => {
       const m = jointMap[limb];
+      const { arm, leg, rootY } = geom();
       let ok;
       if (m.s !== undefined) {
         const lx = t.position.x - m.side * arm.shoulderX;
