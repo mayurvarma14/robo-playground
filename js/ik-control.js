@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import {
-  DHChain, solvePositionIK, scaraIK, legIK, ackermann, quadMix,
+  DHChain, solvePositionIK, scaraIK, twoLinkIK, legIK, legFK, ackermann, quadMix,
   worldToDH, dhToWorld, DEG,
 } from './kinematics.js';
 
@@ -58,10 +58,17 @@ export class IKController {
     this._setWarning(false);
     document.getElementById('btn-ik-mode').style.display = 'none';
     this.mode = cfg.kinematics?.type ?? null;
+    // _bodyPose is controller-owned: clear it everywhere so a robot switched
+    // away from rebuilds in its neutral stance next time
+    for (const c of Object.values(robots)) delete c.params._bodyPose;
+    viewport.clearKinHelpers();
+    this.comMarker = null;
 
     if (this.mode === 'dh') this._activateArm(cfg, host);
     else if (this.mode === 'scara') this._activateScara(cfg, host);
     else if (this.mode === 'numeric-arms') this._activateDexarm(cfg, host);
+    else if (this.mode === 'quad-legs') this._activateQuad(cfg, host);
+    else if (this.mode === 'limbs') this._activateHumanoid(cfg, host);
     else {
       host.innerHTML = '<p class="help-text">IK target control for this robot is on the dedicated panel below.</p>';
       document.getElementById('ik-status-text').textContent = 'IK Idle';
@@ -184,6 +191,187 @@ export class IKController {
       for (let i = 0; i < 3; i++) cfg.joints[i] = r.q[i];
       return r.converged;
     };
+  }
+
+  _activateQuad(cfg, host) {
+    host.innerHTML = `
+      <p class="help-text">Drag the body — feet stay planted (per-leg analytical IK). Toggle gizmo mode for body rotation.</p>
+      <button class="mini-btn" id="btn-quad-reset">Reset Stance</button>`;
+    document.getElementById('btn-ik-mode').style.display = '';
+
+    const legs = cfg.kinematics.legs(cfg.params);
+    const F = cfg.params.femur, T = cfg.params.tibia + cfg.kinematics.footOffset;
+    const Cx = cfg.params.coxa;
+
+    // record stance: world foot positions at current joints (legFK from kinematics.js)
+    const stance = legs.map(leg => {
+      const q = cfg.joints.slice(leg.joint0, leg.joint0 + 3);
+      const p = legFK(q[0], q[1], q[2], Cx, F, T, leg.side);
+      return [leg.hip[0] + p.x, leg.hip[1] + p.y, leg.hip[2] + p.z];
+    });
+
+    this.target.position.set(0, legs[0].hip[1], 0);
+    this.target.rotation.set(0, 0, 0);
+    this.target.visible = true;
+    this.deps.viewport.attachGizmo(this.target, 'translate');
+
+    document.getElementById('btn-quad-reset').addEventListener('click', () => {
+      this.target.position.set(0, legs[0].hip[1], 0);
+      this.target.rotation.set(0, 0, 0);
+      this.solvePending = true;
+    });
+
+    const H0 = legs[0].hip[1];
+    this.solver = (t) => {
+      // body transform B relative to neutral: translation (t.pos − (0,H0,0)) + rotation
+      const B = new THREE.Matrix4().makeRotationFromEuler(t.rotation);
+      const bodyPos = new THREE.Vector3(t.position.x, t.position.y, t.position.z);
+      const Binv = B.clone().invert();
+      let allReachable = true;
+      legs.forEach((leg, i) => {
+        // hip world = bodyPos + B·(hipLocal − bodyCentreLocal)
+        const hipLocal = new THREE.Vector3(leg.hip[0], 0, leg.hip[2]); // relative to body centre
+        const hipWorld = hipLocal.clone().applyMatrix4(B).add(bodyPos);
+        const foot = new THREE.Vector3(...stance[i]);
+        // target in (rotated) hip frame
+        const rel = foot.clone().sub(hipWorld).applyMatrix4(Binv);
+        const r = legIK(rel.x, rel.y, rel.z, Cx, F, T, leg.side);
+        if (!r.reachable) allReachable = false;
+        cfg.joints[leg.joint0] = r.q0;
+        cfg.joints[leg.joint0 + 1] = r.q1;
+        cfg.joints[leg.joint0 + 2] = r.q2;
+      });
+      // pass body pose to the builder
+      cfg.params._bodyPose = {
+        x: bodyPos.x, y: bodyPos.y - H0, z: bodyPos.z,
+        rx: t.rotation.x, ry: t.rotation.y, rz: t.rotation.z,
+      };
+      return allReachable;
+    };
+  }
+
+  _activateHumanoid(cfg, host) {
+    host.innerHTML = `
+      <div class="param-row">
+        <label>Target Limb <span class="param-val" id="limb-label">R Arm</span></label>
+        <select class="styled-select" id="limb-select">
+          <option value="rarm">Right Arm</option>
+          <option value="larm">Left Arm</option>
+          <option value="rleg">Right Leg (foot)</option>
+          <option value="lleg">Left Leg (foot)</option>
+        </select>
+      </div>
+      <p class="help-text">2-link analytical IK per limb. Green disc = ground-projected COM; red = outside support polygon.</p>`;
+
+    const kin = cfg.kinematics;
+    const arm = kin.arm(cfg.params), leg = kin.leg(cfg.params);
+    const rootY = kin.rootY(cfg.params);
+
+    // COM marker
+    this.comMarker = new THREE.Mesh(
+      new THREE.CylinderGeometry(12, 12, 2, 24),
+      new THREE.MeshBasicMaterial({ color: 0x22c55e })
+    );
+    this.comMarker.position.y = 1;
+    this.deps.viewport.addKinHelper(this.comMarker);
+
+    const jointMap = {
+      rarm: { s: 4, e: 6, side: 1 },
+      larm: { s: 1, e: 3, side: -1 },
+      rleg: { hip: 10, knee: 11, ankle: 12, side: 1 },
+      lleg: { hip: 7, knee: 8, ankle: 9, side: -1 },
+    };
+    let limb = 'rarm';
+    const sel = document.getElementById('limb-select');
+    sel.addEventListener('change', () => { limb = sel.value; placeTarget(); });
+
+    const placeTarget = () => {
+      const m = jointMap[limb];
+      if (m.s !== undefined) {
+        const qs = cfg.joints[m.s], qe = cfg.joints[m.e];
+        // arm FK (frontal plane): hangs −Y, RotZ swing
+        const x = arm.upper * Math.sin(qs) + arm.fore * Math.sin(qs + qe);
+        const y = -(arm.upper * Math.cos(qs) + arm.fore * Math.cos(qs + qe));
+        this.target.position.set(m.side * arm.shoulderX + x, rootY + arm.shoulderY + y, 0);
+      } else {
+        const qh = cfg.joints[m.hip], qk = cfg.joints[m.knee];
+        const y = -(leg.thigh * Math.cos(qh) + leg.shin * Math.cos(qh + qk));
+        const z = -(leg.thigh * Math.sin(qh) + leg.shin * Math.sin(qh + qk));
+        this.target.position.set(m.side * leg.hipX, rootY + leg.hipY + y, z);
+      }
+    };
+    placeTarget();
+    this.target.visible = true;
+    this.deps.viewport.attachGizmo(this.target, 'translate');
+
+    this.solver = (t) => {
+      const m = jointMap[limb];
+      let ok;
+      if (m.s !== undefined) {
+        const lx = t.position.x - m.side * arm.shoulderX;
+        const ly = t.position.y - (rootY + arm.shoulderY);
+        // planar map: w = −ly, u = lx (see Task 4 conventions)
+        const r = twoLinkIK(-ly, lx, arm.upper, arm.fore, -1);
+        cfg.joints[m.s] = r.q1;
+        cfg.joints[m.e] = r.q2;
+        ok = r.reachable;
+      } else {
+        const ly = t.position.y - (rootY + leg.hipY);
+        const lz = t.position.z;
+        const r = twoLinkIK(-ly, -lz, leg.thigh, leg.shin, 1);
+        cfg.joints[m.hip] = r.q1;
+        cfg.joints[m.knee] = r.q2;
+        cfg.joints[m.ankle] = -(r.q1 + r.q2); // keep foot level
+        ok = r.reachable;
+      }
+      this._updateCOM(cfg);
+      return ok;
+    };
+    this._updateCOM(cfg);
+  }
+
+  _updateCOM(cfg) {
+    const kin = cfg.kinematics;
+    const m = kin.masses;
+    const p = cfg.params;
+    const rootY = kin.rootY(p);
+    const leg = kin.leg(p);
+    // segment COM points (world, coarse): torso/head fixed to torso frame,
+    // limb segment midpoints from the same trig the mesh uses
+    const pts = [];
+    pts.push([0, rootY + 70, 0, m.torso]);
+    pts.push([0, rootY + 190, 0, m.head]);
+    for (const side of [-1, 1]) {
+      const s = side > 0 ? 4 : 1, e = side > 0 ? 6 : 3;
+      const arm = kin.arm(p);
+      const qs = cfg.joints[s], qe = cfg.joints[e];
+      const midX = arm.upper * 0.5 * Math.sin(qs);
+      const midY = -arm.upper * 0.5 * Math.cos(qs);
+      pts.push([side * arm.shoulderX + midX, rootY + arm.shoulderY + midY, 0, m.arm * 2]);
+      const hip = side > 0 ? 10 : 7, knee = side > 0 ? 11 : 8;
+      const qh = cfg.joints[hip], qk = cfg.joints[knee];
+      const thighMid = [0, -p.thigh * 0.5 * Math.cos(qh), -p.thigh * 0.5 * Math.sin(qh)];
+      pts.push([side * leg.hipX, rootY + leg.hipY + thighMid[1], thighMid[2], m.thigh]);
+      const footY = -(p.thigh * Math.cos(qh) + p.shin * Math.cos(qh + qk));
+      const footZ = -(p.thigh * Math.sin(qh) + p.shin * Math.sin(qh + qk));
+      pts.push([side * leg.hipX, rootY + leg.hipY + footY, footZ, m.shin + m.foot]);
+    }
+    let cx = 0, cz = 0, mt = 0;
+    for (const [x, , z, w] of pts) { cx += x * w; cz += z * w; mt += w; }
+    cx /= mt; cz /= mt;
+    this.comMarker.position.set(cx, 1, cz);
+    // support polygon: union of two foot rects (40 × 90, centred at foot, +20 z offset)
+    const feet = [];
+    for (const side of [-1, 1]) {
+      const hip = side > 0 ? 10 : 7, knee = side > 0 ? 11 : 8;
+      const qh = cfg.joints[hip], qk = cfg.joints[knee];
+      const fz = -(p.thigh * Math.sin(qh) + p.shin * Math.sin(qh + qk)) + 20;
+      feet.push({ x: side * kin.leg(p).hipX, z: fz });
+    }
+    const minX = Math.min(...feet.map(f => f.x)) - 20, maxX = Math.max(...feet.map(f => f.x)) + 20;
+    const minZ = Math.min(...feet.map(f => f.z)) - 45, maxZ = Math.max(...feet.map(f => f.z)) + 45;
+    const inside = cx >= minX && cx <= maxX && cz >= minZ && cz <= maxZ;
+    this.comMarker.material.color.setHex(inside ? 0x22c55e : 0xef4444);
   }
 
   _buildPoseFields(labels) {
