@@ -61,8 +61,15 @@ export class IKController {
     // _bodyPose is controller-owned: clear it everywhere so a robot switched
     // away from rebuilds in its neutral stance next time
     for (const c of Object.values(robots)) delete c.params._bodyPose;
+    if (this.comMarker) {
+      this.comMarker.geometry.dispose();
+      this.comMarker.material.dispose();
+    }
     viewport.clearKinHelpers();
     this.comMarker = null;
+    // gizmo always starts a robot in translate mode; keep the toggle in sync
+    viewport.setGizmoMode('translate');
+    document.getElementById('btn-ik-mode').textContent = 'Rotate';
 
     if (this.mode === 'dh') this._activateArm(cfg, host);
     else if (this.mode === 'scara') this._activateScara(cfg, host);
@@ -199,39 +206,51 @@ export class IKController {
       <button class="mini-btn" id="btn-quad-reset">Reset Stance</button>`;
     document.getElementById('btn-ik-mode').style.display = '';
 
-    const legs = cfg.kinematics.legs(cfg.params);
-    const F = cfg.params.femur, T = cfg.params.tibia + cfg.kinematics.footOffset;
-    const Cx = cfg.params.coxa;
-
-    // record stance: world foot positions at current joints (legFK from kinematics.js)
-    const stance = legs.map(leg => {
-      const q = cfg.joints.slice(leg.joint0, leg.joint0 + 3);
-      const p = legFK(q[0], q[1], q[2], Cx, F, T, leg.side);
-      return [leg.hip[0] + p.x, leg.hip[1] + p.y, leg.hip[2] + p.z];
+    // geometry read live from cfg.params so dimension sliders stay accurate
+    const geom = () => ({
+      legs: cfg.kinematics.legs(cfg.params),
+      F: cfg.params.femur,
+      T: cfg.params.tibia + cfg.kinematics.footOffset,
+      Cx: cfg.params.coxa,
     });
 
-    this.target.position.set(0, legs[0].hip[1], 0);
+    // record stance: world foot positions at current joints (legFK from kinematics.js)
+    const captureStance = () => {
+      const { legs, F, T, Cx } = geom();
+      return legs.map(leg => {
+        const q = cfg.joints.slice(leg.joint0, leg.joint0 + 3);
+        const p = legFK(q[0], q[1], q[2], Cx, F, T, leg.side);
+        return [leg.hip[0] + p.x, leg.hip[1] + p.y, leg.hip[2] + p.z];
+      });
+    };
+    let stance = captureStance();
+
+    this.target.position.set(0, geom().legs[0].hip[1], 0);
     this.target.rotation.set(0, 0, 0);
     this.target.visible = true;
     this.deps.viewport.attachGizmo(this.target, 'translate');
 
     document.getElementById('btn-quad-reset').addEventListener('click', () => {
-      this.target.position.set(0, legs[0].hip[1], 0);
+      // re-plant the feet where they stand now (joints may have been slid)
+      stance = captureStance();
+      this.target.position.set(0, geom().legs[0].hip[1], 0);
       this.target.rotation.set(0, 0, 0);
       this.solvePending = true;
     });
 
-    const H0 = legs[0].hip[1];
     this.solver = (t) => {
-      // body transform B relative to neutral: translation (t.pos − (0,H0,0)) + rotation
+      const { legs, F, T, Cx } = geom();
+      const H0 = legs[0].hip[1];
+      // builder applies _bodyPose on bodyGroup at the root origin (ground
+      // level), so model the same pivot: hips at local (hipX, H0, hipZ),
+      // body translation relative to neutral = t.position − (0, H0, 0)
       const B = new THREE.Matrix4().makeRotationFromEuler(t.rotation);
-      const bodyPos = new THREE.Vector3(t.position.x, t.position.y, t.position.z);
+      const shift = new THREE.Vector3(t.position.x, t.position.y - H0, t.position.z);
       const Binv = B.clone().invert();
       let allReachable = true;
       legs.forEach((leg, i) => {
-        // hip world = bodyPos + B·(hipLocal − bodyCentreLocal)
-        const hipLocal = new THREE.Vector3(leg.hip[0], 0, leg.hip[2]); // relative to body centre
-        const hipWorld = hipLocal.clone().applyMatrix4(B).add(bodyPos);
+        const hipLocal = new THREE.Vector3(leg.hip[0], leg.hip[1], leg.hip[2]);
+        const hipWorld = hipLocal.clone().applyMatrix4(B).add(shift);
         const foot = new THREE.Vector3(...stance[i]);
         // target in (rotated) hip frame
         const rel = foot.clone().sub(hipWorld).applyMatrix4(Binv);
@@ -243,7 +262,7 @@ export class IKController {
       });
       // pass body pose to the builder
       cfg.params._bodyPose = {
-        x: bodyPos.x, y: bodyPos.y - H0, z: bodyPos.z,
+        x: shift.x, y: shift.y, z: shift.z,
         rx: t.rotation.x, ry: t.rotation.y, rz: t.rotation.z,
       };
       return allReachable;
@@ -266,6 +285,13 @@ export class IKController {
     const kin = cfg.kinematics;
     const arm = kin.arm(cfg.params), leg = kin.leg(cfg.params);
     const rootY = kin.rootY(cfg.params);
+
+    // the planar limb model assumes torso yaw and shoulder rolls are zero —
+    // zero them on entry so targets and COM match the mesh
+    cfg.joints[0] = 0;
+    cfg.joints[2] = 0;
+    cfg.joints[5] = 0;
+    this.deps.onJointsChanged();
 
     // COM marker
     this.comMarker = new THREE.Mesh(
