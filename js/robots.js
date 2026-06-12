@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three';
 import { MAT } from './materials.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { DHChain, dhToWorld, scaraFK, matMul, matRotX, matRotY, matRotZ, matTrans, matPoint } from './kinematics.js';
 
 export const ARM_FLANGE = 30;
@@ -45,6 +46,55 @@ function ring(inner, outer, h, segs = 32, mat, name) {
   const m = mesh(geo, mat, name);
   m.rotation.x = Math.PI / 2;
   return m;
+}
+
+// Rounded box — same signature as box(), with bevel radius
+function rbox(w, h, d, r, mat, name) {
+  return mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2, h / 2, d / 2)), mat, name);
+}
+
+// Capsule limb segment, axis along Y
+function capsule(radius, length, mat, name) {
+  return mesh(new THREE.CapsuleGeometry(radius, length, 6, 20), mat, name);
+}
+
+// Cylinder with a chamfered (truncated-cone) edge top and bottom
+function chamferCyl(r, h, chamfer, segments, mat, name) {
+  const g = new THREE.Group();
+  if (name) g.name = name;
+  const body = cyl(r, r, h - 2 * chamfer, segments, mat);
+  g.add(body);
+  const top = cyl(r - chamfer, r, chamfer, segments, mat);
+  top.position.y = h / 2 - chamfer / 2;
+  g.add(top);
+  const bot = cyl(r, r - chamfer, chamfer, segments, mat);
+  bot.position.y = -h / 2 + chamfer / 2;
+  g.add(bot);
+  return g;
+}
+
+// Ring of bolt heads on a joint face (lies in XZ plane, +Y up)
+function boltCircle(radius, n, mat) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const bolt = cyl(1.6, 1.6, 2, 6, mat);
+    bolt.position.set(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+    g.add(bolt);
+  }
+  return g;
+}
+
+// Strip of recessed vent slots across width w (slots along X)
+function vents(w, n, mat) {
+  const g = new THREE.Group();
+  const slotW = (w * 0.7) / n;
+  for (let i = 0; i < n; i++) {
+    const slot = box(slotW * 0.55, 1.2, 6, mat);
+    slot.position.x = -w * 0.35 + (i + 0.5) * slotW;
+    g.add(slot);
+  }
+  return g;
 }
 
 // Generic servo motor visual block
