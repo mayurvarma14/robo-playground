@@ -331,8 +331,10 @@ export function buildHumanoid(joints, params) {
     const shoulderJoint = sphere(16, 16, MAT.chrome, 'Shoulder Joint');
     shoulderGroup.add(shoulderJoint);
 
-    // Upper arm
+    // Upper arm — euler XYZ: RX(roll) tilts the whole swing plane fore/aft,
+    // RZ(pitch) swings the arm within that plane
     const armG = new THREE.Group();
+    armG.rotation.x = side > 0 ? joints[5] : joints[2];
     armG.rotation.z = side > 0 ? joints[4] : joints[1];
     shoulderGroup.add(armG);
 
@@ -1180,10 +1182,10 @@ export const ROBOTS = {
     jointLimits: [
       { min: -90,  max: 90,  step: 1, isAngle: true },
       { min: -180, max: 90,  step: 1, isAngle: true },
-      { min: -10,  max: 110, step: 1, isAngle: true },
+      { min: -120, max: 120, step: 1, isAngle: true },
       { min: -130, max: 0,   step: 1, isAngle: true },
       { min: -180, max: 90,  step: 1, isAngle: true },
-      { min: -10,  max: 110, step: 1, isAngle: true },
+      { min: -120, max: 120, step: 1, isAngle: true },
       { min: -130, max: 0,   step: 1, isAngle: true },
       { min: -60,  max: 60,  step: 1, isAngle: true },
       { min: 0,    max: 120, step: 1, isAngle: true },

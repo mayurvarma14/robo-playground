@@ -287,7 +287,7 @@ export class IKController {
           <option value="lleg">Left Leg (foot)</option>
         </select>
       </div>
-      <p class="help-text">2-link analytical IK per limb. Green disc = ground-projected COM; red = outside support polygon.</p>`;
+      <p class="help-text">Arms: 3-DOF analytical IK (roll + swing + elbow). Legs: sagittal 2-link with level feet. Green disc = ground-projected COM; red = outside support polygon.</p>`;
 
     const kin = cfg.kinematics;
     // dimensions read live so param-slider changes stay accurate
@@ -297,11 +297,9 @@ export class IKController {
       rootY: kin.rootY(cfg.params),
     });
 
-    // the planar limb model assumes torso yaw and shoulder rolls are zero —
-    // zero them on entry so targets and COM match the mesh
+    // the limb model assumes torso yaw is zero — zero it on entry so
+    // targets and COM match the mesh (shoulder rolls are solved by IK)
     cfg.joints[0] = 0;
-    cfg.joints[2] = 0;
-    cfg.joints[5] = 0;
     this.deps.onJointsChanged();
 
     // COM marker
@@ -313,8 +311,8 @@ export class IKController {
     this.deps.viewport.addKinHelper(this.comMarker);
 
     const jointMap = {
-      rarm: { s: 4, e: 6, side: 1 },
-      larm: { s: 1, e: 3, side: -1 },
+      rarm: { s: 4, r: 5, e: 6, side: 1 },
+      larm: { s: 1, r: 2, e: 3, side: -1 },
       rleg: { hip: 10, knee: 11, ankle: 12, side: 1 },
       lleg: { hip: 7, knee: 8, ankle: 9, side: -1 },
     };
@@ -326,11 +324,15 @@ export class IKController {
       const m = jointMap[limb];
       const { arm, leg, rootY } = geom();
       if (m.s !== undefined) {
-        const qs = cfg.joints[m.s], qe = cfg.joints[m.e];
-        // arm FK (frontal plane): hangs −Y, RotZ swing
-        const x = arm.upper * Math.sin(qs) + arm.fore * Math.sin(qs + qe);
-        const y = -(arm.upper * Math.cos(qs) + arm.fore * Math.cos(qs + qe));
-        this.target.position.set(m.side * arm.shoulderX + x, rootY + arm.shoulderY + y, 0);
+        const qs = cfg.joints[m.s], qe = cfg.joints[m.e], qr = cfg.joints[m.r];
+        // arm FK: RotZ swing in-plane, then RotX roll tilts the plane fore/aft
+        const px = arm.upper * Math.sin(qs) + arm.fore * Math.sin(qs + qe);
+        const py = -(arm.upper * Math.cos(qs) + arm.fore * Math.cos(qs + qe));
+        this.target.position.set(
+          m.side * arm.shoulderX + px,
+          rootY + arm.shoulderY + py * Math.cos(qr),
+          py * Math.sin(qr),
+        );
       } else {
         const qh = cfg.joints[m.hip], qk = cfg.joints[m.knee];
         const y = -(leg.thigh * Math.cos(qh) + leg.shin * Math.cos(qh + qk));
@@ -349,8 +351,17 @@ export class IKController {
       if (m.s !== undefined) {
         const lx = t.position.x - m.side * arm.shoulderX;
         const ly = t.position.y - (rootY + arm.shoulderY);
-        // planar map: w = −ly, u = lx (see Task 4 conventions)
-        const r = twoLinkIK(-ly, lx, arm.upper, arm.fore, -1);
+        const lz = t.position.z;
+        // decompose: shoulder roll a tilts the swing plane so it contains the
+        // target — (ly, lz) = py·(cos a, sin a) with py = −hypot(ly, lz) —
+        // then the in-plane problem is the familiar 2-link (w = −py, u = lx)
+        const rr = Math.hypot(ly, lz);
+        if (rr > 1e-6) {
+          const lim = cfg.jointLimits[m.r];
+          const a = Math.atan2(-lz, -ly);
+          cfg.joints[m.r] = Math.max(lim.min * DEG, Math.min(lim.max * DEG, a));
+        }
+        const r = twoLinkIK(rr, lx, arm.upper, arm.fore, -1);
         cfg.joints[m.s] = r.q1;
         cfg.joints[m.e] = r.q2;
         ok = r.reachable;
@@ -536,12 +547,17 @@ export class IKController {
     pts.push([0, rootY + 70, 0, m.torso]);
     pts.push([0, rootY + 190, 0, m.head]);
     for (const side of [-1, 1]) {
-      const s = side > 0 ? 4 : 1, e = side > 0 ? 6 : 3;
+      const s = side > 0 ? 4 : 1, r = side > 0 ? 5 : 2;
       const arm = kin.arm(p);
-      const qs = cfg.joints[s], qe = cfg.joints[e];
+      const qs = cfg.joints[s], qr = cfg.joints[r];
       const midX = arm.upper * 0.5 * Math.sin(qs);
       const midY = -arm.upper * 0.5 * Math.cos(qs);
-      pts.push([side * arm.shoulderX + midX, rootY + arm.shoulderY + midY, 0, m.arm * 2]);
+      pts.push([
+        side * arm.shoulderX + midX,
+        rootY + arm.shoulderY + midY * Math.cos(qr),
+        midY * Math.sin(qr),
+        m.arm * 2,
+      ]);
       const hip = side > 0 ? 10 : 7, knee = side > 0 ? 11 : 8;
       const qh = cfg.joints[hip], qk = cfg.joints[knee];
       const thighMid = [0, -p.thigh * 0.5 * Math.cos(qh), -p.thigh * 0.5 * Math.sin(qh)];
