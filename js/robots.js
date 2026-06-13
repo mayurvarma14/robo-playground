@@ -574,25 +574,56 @@ export function buildQuadruped(joints, params) {
     bodyGroup.rotation.set(bp.rx || 0, bp.ry || 0, bp.rz || 0);
   }
 
-  // Body
-  const body = box(bodyW, 30, bodyLen, MAT.blackAnodised, 'Main Body');
-  body.position.y = femur + tibia + 10;
+  const bodyY = femur + tibia + 10;
+
+  // Body — rounded polycarbonate shell (Spot torso)
+  const body = rbox(bodyW, 30, bodyLen, 10, MAT.darkPolycarbonate, 'Main Body');
+  body.position.y = bodyY;
   bodyGroup.add(body);
 
-  // Body top cover
-  const cover = box(bodyW - 10, 20, bodyLen - 10, MAT.darkPolycarbonate, 'Body Cover');
-  cover.position.y = femur + tibia + 28;
+  // Body top cover — rounded shell
+  const cover = rbox(bodyW - 10, 20, bodyLen - 10, 8, MAT.darkPolycarbonate, 'Body Cover');
+  cover.position.y = bodyY + 18;
   bodyGroup.add(cover);
 
-  // Sensor head
-  const sensorHead = box(bodyW - 20, 24, 30, MAT.titanium, 'Sensor Head');
-  sensorHead.position.set(0, femur + tibia + 30, bodyLen / 2 - 5);
+  // Thin accent stripe along the top spine
+  const stripe = rbox(14, 4, bodyLen - 30, 2, MAT.cyan);
+  stripe.position.y = bodyY + 30;
+  bodyGroup.add(stripe);
+
+  // Side fairings — thin rounded panels on each flank
+  const fairingL = rbox(6, 22, bodyLen - 40, 3, MAT.aluminium);
+  fairingL.position.set(bodyW / 2 + 1, bodyY + 4, 0);
+  bodyGroup.add(fairingL);
+
+  const fairingR = rbox(6, 22, bodyLen - 40, 3, MAT.aluminium);
+  fairingR.position.set(-bodyW / 2 - 1, bodyY + 4, 0);
+  bodyGroup.add(fairingR);
+
+  // Sensor head — rounded housing with camera lens + sensor dot
+  const sensorHead = rbox(bodyW - 20, 24, 30, 6, MAT.darkPolycarbonate, 'Sensor Head');
+  sensorHead.position.set(0, bodyY + 20, bodyLen / 2 - 5);
   bodyGroup.add(sensorHead);
 
-  // LiDAR disk
-  const lidar = cyl(12, 12, 8, 20, MAT.cyan, 'LiDAR');
-  lidar.position.set(0, femur + tibia + 46, bodyLen / 2 - 5);
+  // Chrome camera lens (faces forward, +Z)
+  const lens = cyl(8, 8, 6, 20, MAT.chrome, 'Camera Lens');
+  lens.rotation.x = Math.PI / 2;
+  lens.position.set(0, bodyY + 20, bodyLen / 2 + 9);
+  bodyGroup.add(lens);
+
+  // Small cyan sensor dot
+  const sensorDot = sphere(3, 10, MAT.cyan);
+  sensorDot.position.set(bodyW / 2 - 22, bodyY + 26, bodyLen / 2 + 9);
+  bodyGroup.add(sensorDot);
+
+  // LiDAR puck — chamfered cylinder with a vent ring
+  const lidar = chamferCyl(12, 14, 3, 20, MAT.titanium, 'LiDAR');
+  lidar.position.set(0, bodyY + 40, bodyLen / 2 - 5);
   bodyGroup.add(lidar);
+
+  const lidarVents = vents(20, 6, MAT.blackAnodised);
+  lidarVents.position.set(0, bodyY + 40, bodyLen / 2 - 5 + 12);
+  bodyGroup.add(lidarVents);
 
   const legPositions = [
     [  bodyW / 2,  bodyLen / 2 - 20 ],  // FR
@@ -617,7 +648,7 @@ export function buildQuadruped(joints, params) {
     hipYaw.rotation.y = joints[ji];
     legGroup.add(hipYaw);
 
-    const hipDisk = cyl(14, 14, 20, 16, MAT.chrome, `${prefix} Hip`);
+    const hipDisk = chamferCyl(14, 20, 3, 16, MAT.chrome, `${prefix} Hip`);
     hipDisk.rotation.z = Math.PI / 2;
     hipYaw.add(hipDisk);
 
@@ -635,7 +666,8 @@ export function buildQuadruped(joints, params) {
     hipPitch.rotation.x = joints[ji + 1];
     coxaEnd.add(hipPitch);
 
-    const femurLink = box(18, femur, 16, MAT.whitePolycarbonate, `${prefix} Femur`);
+    // Capsule femur — length keeps centre at -femur/2 so geometry spans the segment
+    const femurLink = capsule(8, femur - 16, MAT.darkPolycarbonate, `${prefix} Femur`);
     femurLink.position.y = -femur / 2;
     hipPitch.add(femurLink);
 
@@ -645,16 +677,18 @@ export function buildQuadruped(joints, params) {
     kneeGroup.rotation.x = joints[ji + 2];
     hipPitch.add(kneeGroup);
 
-    const kneeDisk = cyl(12, 12, 18, 16, MAT.chrome, `${prefix} Knee`);
+    const kneeDisk = chamferCyl(12, 18, 3, 16, MAT.chrome, `${prefix} Knee`);
     kneeDisk.rotation.z = Math.PI / 2;
     kneeGroup.add(kneeDisk);
 
-    const tibiaLink = box(14, tibia, 12, MAT.carbonFiber, `${prefix} Tibia`);
+    // Capsule tibia — centre stays at -tibia/2
+    const tibiaLink = capsule(6, tibia - 12, MAT.aluminium, `${prefix} Tibia`);
     tibiaLink.position.y = -tibia / 2;
     kneeGroup.add(tibiaLink);
 
-    // Foot
+    // Foot — rubber, slightly flattened; CENTRE position unchanged for IK stance
     const foot = sphere(9, 12, MAT.rubber, `${prefix} Foot`);
+    foot.scale.y = 0.7;
     foot.position.y = -tibia - 2;
     kneeGroup.add(foot);
   }
