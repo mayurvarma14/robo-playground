@@ -708,33 +708,71 @@ export function buildRover(joints, params) {
   const root = new THREE.Group();
   const bodyY = wheelR + 30;
 
-  // Main chassis frame
-  const chassis = box(chassisW, 20, chassisL, MAT.darkSteel, 'Chassis Frame');
+  // Main chassis frame — boxy but bevelled titanium tub (Perseverance look)
+  const chassis = rbox(chassisW, 22, chassisL, 8, MAT.titanium, 'Chassis Frame');
   chassis.position.y = bodyY;
   root.add(chassis);
 
-  // Science deck / body
-  const deck = box(chassisW - 10, 14, chassisL - 30, MAT.titanium, 'Science Deck');
-  deck.position.y = bodyY + 18;
+  // Science deck / body — aluminium shell on top
+  const deck = rbox(chassisW - 10, 16, chassisL - 30, 8, MAT.aluminium, 'Science Deck');
+  deck.position.y = bodyY + 19;
   root.add(deck);
 
-  // Solar panels
-  const solarL = box(chassisW + 50, 4, chassisL - 60, MAT.cyan, 'Solar Panel L');
+  // Equipment-bay inset — dark polycarbonate panel recessed into the deck top
+  const bay = rbox(chassisW - 34, 4, chassisL - 70, 3, MAT.darkPolycarbonate);
+  bay.position.y = bodyY + 28;
+  root.add(bay);
+
+  // RTG — rear nuclear battery: dark finned block elevated off the −Z end
+  const rtg = new THREE.Group();
+  rtg.position.set(0, bodyY + 36, -chassisL / 2 - 6);
+  root.add(rtg);
+  const rtgCore = chamferCyl(20, 70, 4, 16, MAT.steelDark, 'RTG Core');
+  rtgCore.rotation.x = Math.PI / 2;       // axis along Z, sticking out the back
+  rtg.add(rtgCore);
+  for (let f = 0; f < 6; f++) {
+    const fin = cyl(30, 30, 2, 16, MAT.steelDark);
+    fin.rotation.x = Math.PI / 2;
+    fin.position.z = -28 + f * 11;
+    rtg.add(fin);
+  }
+
+  // Solar panels — kept for structure, cleaner dark-blue panel material
+  const solarL = box(chassisW + 50, 4, chassisL - 60, MAT.darkPolycarbonate, 'Solar Panel L');
   solarL.position.set(-(chassisW + 50) / 2, bodyY + 30, 0);
   root.add(solarL);
 
-  const solarR = box(chassisW + 50, 4, chassisL - 60, MAT.cyan, 'Solar Panel R');
+  const solarR = box(chassisW + 50, 4, chassisL - 60, MAT.darkPolycarbonate, 'Solar Panel R');
   solarR.position.set((chassisW + 50) / 2, bodyY + 30, 0);
   root.add(solarR);
+
+  // Antenna masts — thin cyl + sphere tip, on the deck
+  for (const ax of [-chassisW / 2 + 18, chassisW / 2 - 18]) {
+    const ant = cyl(2, 2, 60, 8, MAT.aluminium);
+    ant.position.set(ax, bodyY + 30 + 30, chassisL / 2 - 30);
+    root.add(ant);
+    const tip = sphere(4, 10, MAT.cyan);
+    tip.position.set(ax, bodyY + 30 + 60, chassisL / 2 - 30);
+    root.add(tip);
+  }
 
   // Camera mast
   const mast = cyl(5, 5, 80, 8, MAT.aluminium, 'Camera Mast');
   mast.position.set(0, bodyY + 40 + 40, -chassisL / 2 + 20);
   root.add(mast);
 
-  const camHead = box(30, 20, 20, MAT.blackAnodised, 'Camera Head');
+  const camHead = rbox(30, 20, 20, 4, MAT.blackAnodised, 'Camera Head');
   camHead.position.set(0, bodyY + 90, -chassisL / 2 + 20);
   root.add(camHead);
+
+  // Mast camera lens (chrome, faces forward +Z) + cyan sensor
+  const lens = cyl(6, 6, 8, 16, MAT.chrome);
+  lens.rotation.x = Math.PI / 2;
+  lens.position.set(0, bodyY + 90, -chassisL / 2 + 32);
+  root.add(lens);
+  const sensor = box(6, 6, 2, MAT.cyan);
+  sensor.position.set(11, bodyY + 90, -chassisL / 2 + 30);
+  root.add(sensor);
 
   // Sample arm — 2-link (shoulder pitch + elbow) reaching in the rover's
   // forward vertical plane. RotX(q) lifts the forward (−Z) link up by q.
@@ -755,7 +793,7 @@ export function buildRover(joints, params) {
   shoulderJoint.rotation.z = Math.PI / 2;
   shoulderGroup.add(shoulderJoint);
 
-  const upperLink = box(10, 10, ROVER_ARM_L1, MAT.aluminium, 'Arm Upper Link');
+  const upperLink = rbox(10, 10, ROVER_ARM_L1, 3, MAT.aluminium, 'Arm Upper Link');
   upperLink.position.z = -ROVER_ARM_L1 / 2;
   shoulderGroup.add(upperLink);
 
@@ -768,11 +806,11 @@ export function buildRover(joints, params) {
   elbowJoint.rotation.z = Math.PI / 2;
   elbowGroup.add(elbowJoint);
 
-  const foreLink = box(8, 8, ROVER_ARM_L2, MAT.aluminium, 'Arm Forearm Link');
+  const foreLink = rbox(8, 8, ROVER_ARM_L2, 2.5, MAT.aluminium, 'Arm Forearm Link');
   foreLink.position.z = -ROVER_ARM_L2 / 2;
   elbowGroup.add(foreLink);
 
-  const scoop = box(16, 8, 14, MAT.darkSteel, 'Arm Scoop');
+  const scoop = rbox(16, 8, 14, 3, MAT.steelDark, 'Arm Scoop');
   scoop.position.z = -ROVER_ARM_L2 - 6;
   elbowGroup.add(scoop);
 
@@ -815,6 +853,15 @@ export function buildRover(joints, params) {
       const spoke = box(wheelR * 0.75, 3, 3, MAT.darkSteel);
       spoke.rotation.z = (s / 5) * Math.PI;
       spinGroup.add(spoke);
+    }
+
+    // Grouser cleats — raised ridges around the tyre circumference (spin with wheel)
+    for (let c = 0; c < 8; c++) {
+      const a = (c / 8) * Math.PI * 2;
+      const cleat = box(wheelW + 2, 4, wheelR * 0.28, MAT.steelDark);
+      cleat.position.set(0, Math.sin(a) * wheelR, Math.cos(a) * wheelR);
+      cleat.rotation.x = -a;
+      spinGroup.add(cleat);
     }
 
     root.add(wg);
