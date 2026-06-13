@@ -666,8 +666,8 @@ export function buildQuadruped(joints, params) {
     hipPitch.rotation.x = joints[ji + 1];
     coxaEnd.add(hipPitch);
 
-    // Capsule femur — length keeps centre at -femur/2 so geometry spans the segment
-    const femurLink = capsule(8, femur - 16, MAT.darkPolycarbonate, `${prefix} Femur`);
+    // Capsule femur — beefy load-bearing upper leg; length keeps centre at -femur/2
+    const femurLink = capsule(12, femur - 24, MAT.darkPolycarbonate, `${prefix} Femur`);
     femurLink.position.y = -femur / 2;
     hipPitch.add(femurLink);
 
@@ -681,8 +681,8 @@ export function buildQuadruped(joints, params) {
     kneeDisk.rotation.z = Math.PI / 2;
     kneeGroup.add(kneeDisk);
 
-    // Capsule tibia — centre stays at -tibia/2
-    const tibiaLink = capsule(6, tibia - 12, MAT.aluminium, `${prefix} Tibia`);
+    // Capsule tibia — load-bearing lower leg, slightly slimmer than femur; centre stays at -tibia/2
+    const tibiaLink = capsule(10, tibia - 20, MAT.aluminium, `${prefix} Tibia`);
     tibiaLink.position.y = -tibia / 2;
     kneeGroup.add(tibiaLink);
 
