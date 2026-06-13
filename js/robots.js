@@ -1021,7 +1021,8 @@ function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, 
   const upperArmGroup = new THREE.Group();
   tPose.add(upperArmGroup);
 
-  const upperOuter = box(28, upperArmLen, 24, MAT.whitePolycarbonate, `${prefix} Upper Arm Shell`);
+  const upperR = 13;
+  const upperOuter = capsule(upperR, upperArmLen - 2 * upperR, MAT.whitePolycarbonate, `${prefix} Upper Arm Shell`);
   upperOuter.position.y = -upperArmLen / 2;
   upperArmGroup.add(upperOuter);
 
@@ -1065,7 +1066,8 @@ function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, 
   forearmGroup.position.y = -8;
   elbowGroup.add(forearmGroup);
 
-  const foreOuter = box(22, forearmLen, 20, MAT.whitePolycarbonate, `${prefix} Forearm Shell`);
+  const foreR = 11;
+  const foreOuter = capsule(foreR, forearmLen - 2 * foreR, MAT.whitePolycarbonate, `${prefix} Forearm Shell`);
   foreOuter.position.y = -forearmLen / 2;
   forearmGroup.add(foreOuter);
 
@@ -1103,7 +1105,7 @@ function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, 
   palmGroup.position.y = -20;
   wristGroup.add(palmGroup);
 
-  const palmBody = box(54, palmLen, 18, MAT.darkSteel, `${prefix} Palm`);
+  const palmBody = rbox(54, palmLen, 18, 7, MAT.whitePolycarbonate, `${prefix} Palm`);
   palmBody.position.y = -palmLen / 2;
   palmGroup.add(palmBody);
 
@@ -1143,7 +1145,8 @@ function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, 
     p1Group.rotation.x = jB;
     fingerRoot.add(p1Group);
 
-    const p1 = box(p1w, len[0], 9, MAT.whitePolycarbonate, `${name} Proximal`);
+    const p1r = p1w / 2;
+    const p1 = capsule(p1r, len[0] - 2 * p1r, MAT.whitePolycarbonate, `${name} Proximal`);
     p1.position.y = -len[0] / 2;
     p1Group.add(p1);
 
@@ -1158,7 +1161,8 @@ function buildSingleArm(parent, side, joints, upperArmLen, forearmLen, palmLen, 
     p2Group.rotation.x = jM;
     p1Group.add(p2Group);
 
-    const p2 = box(p1w - 1, len[1], 8, MAT.whitePolycarbonate, `${name} Medial`);
+    const p2r = (p1w - 1) / 2;
+    const p2 = capsule(p2r, len[1] - 2 * p2r, MAT.whitePolycarbonate, `${name} Medial`);
     p2.position.y = -len[1] / 2;
     p2Group.add(p2);
 
@@ -1200,8 +1204,8 @@ export function buildDexArm(joints, params) {
   const torsoH = 180;
   const torsoW = 80;
 
-  // Main torso body
-  const torsoBody = box(torsoW, torsoH, 50, MAT.whitePolycarbonate, 'Torso Body');
+  // Main torso body — rounded polycarbonate shell column
+  const torsoBody = rbox(torsoW, torsoH, 50, 12, MAT.whitePolycarbonate, 'Torso Body');
   torsoBody.position.y = torsoH / 2;
   root.add(torsoBody);
 
@@ -1210,10 +1214,20 @@ export function buildDexArm(joints, params) {
   torsoSpine.position.y = torsoH / 2;
   root.add(torsoSpine);
 
-  // Torso accent panel (cyan strip down the front)
-  const torsoAccent = box(20, torsoH - 30, 8, MAT.cyan, 'Torso Accent');
-  torsoAccent.position.set(0, torsoH / 2, 27);
+  // Dark polycarbonate chest inset
+  const chestInset = rbox(36, torsoH * 0.5, 6, 6, MAT.darkPolycarbonate, 'Torso Chest Inset');
+  chestInset.position.set(0, torsoH * 0.6, 26);
+  root.add(chestInset);
+
+  // Cyan accent strip down the chest inset
+  const torsoAccent = box(12, torsoH - 30, 6, MAT.cyan, 'Torso Accent');
+  torsoAccent.position.set(0, torsoH / 2, 28);
   root.add(torsoAccent);
+
+  // Recessed vent strip across the upper chest
+  const torsoVents = vents(torsoW, 7, MAT.blackAnodised);
+  torsoVents.position.set(0, torsoH * 0.85, 26);
+  root.add(torsoVents);
 
   // Torso top collar
   const collar = cyl(30, 36, 18, 24, MAT.blackAnodised, 'Torso Collar');
