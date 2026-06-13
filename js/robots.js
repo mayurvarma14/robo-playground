@@ -877,15 +877,28 @@ export function buildSCARA(joints, params) {
   const { l1 = 150, l2 = 130, pedestalH = 190 } = params;
   const root = new THREE.Group();
 
-  // Pedestal
-  const pedestal = cyl(30, 36, pedestalH, 24, MAT.darkSteel, 'Pedestal Column');
-  pedestal.position.y = pedestalH / 2;
+  // ── PEDESTAL — solid cast-aluminium column on a bolted steel base flange
+  const baseFlange = chamferCyl(48, 22, 5, 28, MAT.steelDark, 'Pedestal Base');
+  baseFlange.position.y = 11;
+  root.add(baseFlange);
+
+  const baseBolts = boltCircle(40, 8, MAT.steelDark);
+  baseBolts.position.y = 22;
+  root.add(baseBolts);
+
+  const pedestal = chamferCyl(32, pedestalH - 22, 5, 28, MAT.aluminium, 'Pedestal Column');
+  pedestal.position.y = 22 + (pedestalH - 22) / 2;
   root.add(pedestal);
 
   // Pedestal cap
-  const cap = cyl(42, 42, 20, 24, MAT.blackAnodised, 'Pedestal Cap');
-  cap.position.y = pedestalH + 10;
+  const cap = chamferCyl(42, 22, 4, 28, MAT.blackAnodised, 'Pedestal Cap');
+  cap.position.y = pedestalH + 9;
   root.add(cap);
+
+  // Status LED on the pedestal cap
+  const led = box(14, 4, 6, MAT.green, 'Status LED');
+  led.position.set(0, pedestalH + 14, 38);
+  root.add(led);
 
   // ── INNER ARM
   const inner = new THREE.Group();
@@ -893,17 +906,21 @@ export function buildSCARA(joints, params) {
   inner.rotation.y = joints[0];
   root.add(inner);
 
-  const innerLink = roundedLink(l1, 40, 28, MAT.aluminium, 'Inner Arm Link');
-  innerLink.rotation.z = Math.PI / 2;
+  // Cast-alloy casing spanning the inner link, with a parting-line seam
+  const innerLink = rbox(l1 + 24, 40, 30, 7, MAT.aluminium, 'Inner Arm Link');
   innerLink.position.x = l1 / 2;
   inner.add(innerLink);
 
+  const innerSeam = box(l1 + 26, 1.5, 4, MAT.darkPolycarbonate);
+  innerSeam.position.set(l1 / 2, 0, 15.2);
+  inner.add(innerSeam);
+
   // Shoulder motor
-  const shoulderMot = cyl(26, 26, 40, 24, MAT.blackAnodised, 'Shoulder Motor');
+  const shoulderMot = chamferCyl(27, 44, 4, 24, MAT.blackAnodised, 'Shoulder Motor');
   inner.add(shoulderMot);
 
   // Elbow motor
-  const elbowMot = cyl(20, 20, 36, 20, MAT.darkSteel, 'Elbow Motor');
+  const elbowMot = chamferCyl(21, 40, 4, 24, MAT.steelDark, 'Elbow Motor');
   elbowMot.position.x = l1;
   inner.add(elbowMot);
 
@@ -913,10 +930,23 @@ export function buildSCARA(joints, params) {
   outer.rotation.y = joints[1];
   inner.add(outer);
 
-  const outerLink = roundedLink(l2, 32, 24, MAT.aluminium, 'Outer Arm Link');
-  outerLink.rotation.z = Math.PI / 2;
+  const outerLink = rbox(l2 + 20, 34, 26, 7, MAT.aluminium, 'Outer Arm Link');
   outerLink.position.x = l2 / 2;
   outer.add(outerLink);
+
+  const outerSeam = box(l2 + 22, 1.5, 4, MAT.darkPolycarbonate);
+  outerSeam.position.set(l2 / 2, 0, 13.2);
+  outer.add(outerSeam);
+
+  // ── DECORATIVE CABLE — rubber loop from pedestal cap to the elbow joint
+  const cableCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, pedestalH + 24, 30),
+    new THREE.Vector3(l1 * 0.35, pedestalH + 60, 36),
+    new THREE.Vector3(l1 * 0.75, pedestalH + 50, 30),
+    new THREE.Vector3(l1, pedestalH + 28, 18),
+  ]);
+  const cable = mesh(new THREE.TubeGeometry(cableCurve, 24, 3, 8, false), MAT.rubber);
+  root.add(cable);
 
   // ── Z SLIDE ASSEMBLY
   const slideGroup = new THREE.Group();
@@ -943,12 +973,17 @@ export function buildSCARA(joints, params) {
   eeGroup.position.y = -(joints[2] || 30) - 20;
   slideGroup.add(eeGroup);
 
-  const eeHead = box(30, 20, 22, MAT.darkSteel, 'End Effector Head');
+  const eeHead = chamferCyl(17, 22, 4, 24, MAT.steelDark, 'End Effector Head');
   eeGroup.add(eeHead);
 
+  // Tool chuck detail under the flange
+  const chuck = chamferCyl(10, 10, 3, 20, MAT.blackAnodised, 'Tool Chuck');
+  chuck.position.y = -15;
+  eeGroup.add(chuck);
+
   // Vacuum nozzle
-  const nozzle = cyl(4, 8, 28, 12, MAT.chrome, 'Vacuum Nozzle');
-  nozzle.position.y = -20;
+  const nozzle = cyl(4, 8, 24, 12, MAT.chrome, 'Vacuum Nozzle');
+  nozzle.position.y = -28;
   eeGroup.add(nozzle);
 
   return root;
