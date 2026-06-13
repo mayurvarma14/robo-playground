@@ -1283,29 +1283,67 @@ export function dexArmChainFK(q, params, side) {
 // ─────────────────────────────────────────────────────────────
 // ROBOT 7 — QUADCOPTER DRONE
 // ─────────────────────────────────────────────────────────────
+// Flat aerofoil prop blade — thin curved 2D teardrop profile extruded along Y.
+// Cheap: 2-point spline cap, low-step extrude. Returned mesh spans +X from hub.
+function airfoilBlade(len, chord, mat, name) {
+  const half = chord / 2;
+  const shape = new THREE.Shape();
+  // Leading edge at hub (x=0), tapering teardrop to the tip (x=len)
+  shape.moveTo(0, -half * 0.4);
+  // upper camber — gentle curve, fat near root, thin at tip
+  shape.quadraticCurveTo(len * 0.35, half, len, half * 0.18);
+  // tip
+  shape.quadraticCurveTo(len * 1.02, 0, len, -half * 0.18);
+  // lower surface back to root
+  shape.quadraticCurveTo(len * 0.35, -half * 0.55, 0, -half * 0.4);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 2, bevelEnabled: false, steps: 1, curveSegments: 6,
+  });
+  // Extrude is along +Z; lay the blade flat (thin in Y, planform in X/Z)
+  geo.rotateX(Math.PI / 2);
+  geo.translate(0, 0, -1);
+  return mesh(geo, mat, name);
+}
+
 export function buildDrone(joints, params) {
   const { armLen = 140, bodySize = 60 } = params;
   const root = new THREE.Group();
   root.position.y = 80;
 
-  // Central body
-  const bodyTop = box(bodySize, 20, bodySize, MAT.blackAnodised, 'Drone Body');
-  root.add(bodyTop);
+  // ── Central body — rounded polycarbonate shell ───────────────
+  const shell = rbox(bodySize, 22, bodySize * 1.1, 6, MAT.darkPolycarbonate, 'Drone Body');
+  root.add(shell);
 
-  // Battery plate
-  const battery = box(bodySize - 10, 12, bodySize - 12, MAT.orange, 'Battery Pack');
-  battery.position.y = -14;
+  // Top vents strip (cooling slots over the flight controller)
+  const topVents = vents(bodySize * 0.8, 6, MAT.steelDark);
+  topVents.position.y = 12;
+  topVents.rotation.y = Math.PI / 2;
+  root.add(topVents);
+
+  // Battery plate underneath
+  const battery = box(bodySize - 12, 12, bodySize - 14, MAT.orange, 'Battery Pack');
+  battery.position.y = -15;
   root.add(battery);
 
   // Flight controller PCB
-  const fcb = box(30, 4, 30, MAT.darkSteel, 'Flight Controller');
-  fcb.position.y = 14;
+  const fcb = box(30, 4, 30, MAT.steelDark, 'Flight Controller');
+  fcb.position.y = 15;
   root.add(fcb);
 
-  // Camera
-  const cam = box(20, 16, 22, MAT.titanium, 'Camera');
-  cam.position.set(0, -2, bodySize / 2 + 4);
-  root.add(cam);
+  // ── Camera gimbal — chrome ball + lens cylinder under the nose ─
+  const gimbal = new THREE.Group();
+  gimbal.position.set(0, -8, bodySize * 0.55 + 2);
+  const gimbalBall = sphere(9, 16, MAT.chrome, 'Camera Gimbal');
+  gimbal.add(gimbalBall);
+  const lens = cyl(5, 6, 12, 16, MAT.darkPolycarbonate, 'Camera Lens');
+  lens.rotation.x = Math.PI / 2 - 0.25;       // angled slightly forward/down
+  lens.position.set(0, -1, 7);
+  gimbal.add(lens);
+  const lensGlass = cyl(4.5, 4.5, 1.5, 16, MAT.chrome);
+  lensGlass.rotation.x = Math.PI / 2 - 0.25;
+  lensGlass.position.set(0, -2.5, 12.5);
+  gimbal.add(lensGlass);
+  root.add(gimbal);
 
   // 4 arms at 45° angles
   const armAngles = [45, 135, 225, 315];
@@ -1316,49 +1354,57 @@ export function buildDrone(joints, params) {
     const ax = Math.cos(angle) * armLen;
     const az = Math.sin(angle) * armLen;
 
-    // Arm tube
-    const arm = cyl(4, 4, armLen * 2, 8, MAT.carbonFiber, `Arm ${i + 1}`);
+    // Boom — tapered carbon-fibre tube (thicker at body, slim at motor)
+    const arm = cyl(3, 6, armLen * 2, 10, MAT.carbonFiber, `Arm ${i + 1}`);
     arm.rotation.z = Math.PI / 2;
     arm.rotation.y = angle;
     arm.position.set(ax / 2, 2, az / 2);
     root.add(arm);
 
-    // Motor pod
-    const motorPod = cyl(16, 16, 20, 16, MAT.darkSteel, motorNames[i]);
-    motorPod.position.set(ax, 8, az);
-    root.add(motorPod);
+    // ── Motor bell — chamfered can with a thin cooling fin ring ──
+    const bell = chamferCyl(15, 18, 3, 16, MAT.steelDark, motorNames[i]);
+    bell.position.set(ax, 9, az);
+    root.add(bell);
 
-    // Prop (spinning angle from joint)
+    const finRing = mesh(
+      new THREE.TorusGeometry(15, 2, 8, 20), MAT.steelDark);
+    finRing.rotation.x = Math.PI / 2;
+    finRing.position.set(ax, 13, az);
+    root.add(finRing);
+
+    // Prop (spinning angle from joint) — DO NOT change this transform
     const propAngle = joints[i] || 0;
     const propGroup = new THREE.Group();
-    propGroup.position.set(ax, 20, az);
+    propGroup.position.set(ax, 22, az);
     propGroup.rotation.y = propAngle;
     root.add(propGroup);
 
-    // Two blades
-    for (let b of [-1, 1]) {
-      const blade = box(armLen * 0.55, 4, 16, MAT.carbonFiber, `Prop Blade`);
-      blade.position.x = b * armLen * 0.28;
-      blade.rotation.z = b * 0.12;
+    // Two aerofoil blades at 180° — children of the spinning group
+    const bladeLen = armLen * 0.6;
+    for (let b of [0, 1]) {
+      const blade = airfoilBlade(bladeLen, 22, MAT.carbonFiber, `Prop Blade`);
+      blade.rotation.y = b * Math.PI;        // 180° apart
+      blade.rotation.x = 0.14;               // slight pitch
       propGroup.add(blade);
     }
 
-    // Motor nut (chrome detail)
-    const nut = cyl(5, 5, 6, 6, MAT.chrome);
-    nut.position.set(ax, 22, az);
-    root.add(nut);
-  }
+    // Prop hub nut (chrome detail) — also spins with the group
+    const nut = cyl(4, 5, 7, 12, MAT.chrome);
+    propGroup.add(nut);
 
-  // Landing gear
-  for (let side of [-1, 1]) {
-    const leg = cyl(3, 3, 50, 8, MAT.aluminium, side > 0 ? 'Landing Leg R' : 'Landing Leg L');
-    leg.position.set(side * (bodySize / 2 - 4), -30, 0);
-    leg.rotation.z = side * 0.3;
-    root.add(leg);
+    // ── Landing strut — thin cylinder angled down from each boom ──
+    const strut = cyl(2.5, 2.5, 46, 8, MAT.steelDark, `Landing Strut ${i + 1}`);
+    const stx = Math.cos(angle) * armLen * 0.62;
+    const stz = Math.sin(angle) * armLen * 0.62;
+    strut.position.set(stx, -24, stz);
+    strut.rotation.z = -Math.cos(angle) * 0.42;
+    strut.rotation.x = Math.sin(angle) * 0.42;
+    root.add(strut);
 
-    const foot = cyl(3, 3, bodySize, 8, MAT.rubber, side > 0 ? 'Landing Skid R' : 'Landing Skid L');
-    foot.rotation.z = Math.PI / 2;
-    foot.position.set(0, -52, 0);
+    // Rubber foot
+    const foot = sphere(4, 10, MAT.rubber, `Foot ${i + 1}`);
+    foot.scale.y = 0.6;
+    foot.position.set(stx * 1.15, -46, stz * 1.15);
     root.add(foot);
   }
 
