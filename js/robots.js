@@ -386,22 +386,32 @@ export function buildHumanoid(joints, params) {
   torso.rotation.y = joints[0]; // torso twist
   root.add(torso);
 
-  // Pelvis
-  const pelvis = box(hipSpacing + 30, 30, 40, MAT.darkSteel, 'Pelvis');
+  // Pelvis — rounded shell
+  const pelvis = rbox(hipSpacing + 30, 30, 40, 10, MAT.darkPolycarbonate, 'Pelvis');
   pelvis.position.y = 0;
   torso.add(pelvis);
 
-  // Abdomen
-  const abdomen = box(60, 50, 35, MAT.whitePolycarbonate, 'Abdomen Panel');
+  // Abdomen — waist shell, slimmer than chest
+  const abdomen = rbox(58, 50, 34, 12, MAT.whitePolycarbonate, 'Abdomen Panel');
   abdomen.position.y = 45;
   torso.add(abdomen);
 
-  // Chest plate
-  const chest = box(80, 70, 38, MAT.whitePolycarbonate, 'Chest Panel');
+  // Chest — smooth clearcoat shell
+  const chest = rbox(80, 70, 38, 12, MAT.whitePolycarbonate, 'Chest Panel');
   chest.position.y = 110;
   torso.add(chest);
 
-  // Chest internal frame
+  // Dark chest plate inset — sits proud of the shell front
+  const chestPlate = rbox(54, 46, 6, 6, MAT.darkPolycarbonate, 'Chest Plate');
+  chestPlate.position.set(0, 112, 18);
+  torso.add(chestPlate);
+
+  // Chest vent strip across the upper chest
+  const chestVents = vents(54, 6, MAT.darkSteel);
+  chestVents.position.set(0, 132, 19);
+  torso.add(chestVents);
+
+  // Chest internal frame (hidden structural mass for COM/printability)
   const chestFrame = box(72, 62, 30, MAT.darkSteel, 'Chest Frame');
   chestFrame.position.y = 110;
   torso.add(chestFrame);
@@ -416,14 +426,18 @@ export function buildHumanoid(joints, params) {
   headGroup.position.y = 190;
   torso.add(headGroup);
 
-  const headBody = box(48, 50, 40, MAT.whitePolycarbonate, 'Head Shell');
+  const headBody = rbox(48, 50, 40, 8, MAT.whitePolycarbonate, 'Head Shell');
   headGroup.add(headBody);
 
-  // Visor
-  const visorGeo = new THREE.BoxGeometry(40, 12, 5);
-  const visor = mesh(visorGeo, MAT.cyan, 'Vision Visor');
-  visor.position.set(0, 5, 22);
+  // Glossy dark face visor — wraps the front, the robot's "face"
+  const visor = rbox(42, 24, 8, 5, MAT.darkPolycarbonate, 'Vision Visor');
+  visor.position.set(0, 2, 18);
   headGroup.add(visor);
+
+  // Sensor accent inside the visor
+  const sensorBar = box(28, 3, 2, MAT.cyan);
+  sensorBar.position.set(0, 4, 22.5);
+  headGroup.add(sensorBar);
 
   // Shoulders
   for (let side of [-1, 1]) {
@@ -441,7 +455,9 @@ export function buildHumanoid(joints, params) {
     armG.rotation.z = side > 0 ? joints[4] : joints[1];
     shoulderGroup.add(armG);
 
-    const upperArm = box(22, 80, 22, MAT.blackAnodised, side > 0 ? 'R Upper Arm' : 'L Upper Arm');
+    // Upper arm capsule: box was 22 wide, 80 tall, centre y=-40.
+    // radius 10 → capsule spans 60+20=80 along Y, same envelope/centre.
+    const upperArm = capsule(10, 60, MAT.whitePolycarbonate, side > 0 ? 'R Upper Arm' : 'L Upper Arm');
     upperArm.position.y = -40;
     armG.add(upperArm);
 
@@ -457,18 +473,20 @@ export function buildHumanoid(joints, params) {
     forearmG.rotation.z = side > 0 ? joints[6] : joints[3];
     armG.add(forearmG);
 
-    const forearm = box(18, 75, 18, MAT.whitePolycarbonate, side > 0 ? 'R Forearm' : 'L Forearm');
+    // Forearm capsule: box was 18 wide, 75 tall, centre y=-38.
+    // radius 8.5 → spans 58+17=75, same envelope/centre.
+    const forearm = capsule(8.5, 58, MAT.whitePolycarbonate, side > 0 ? 'R Forearm' : 'L Forearm');
     forearm.position.y = -38;
     forearmG.add(forearm);
 
-    // Hand
-    const hand = box(22, 20, 16, MAT.darkSteel, side > 0 ? 'R Hand' : 'L Hand');
+    // Hand — rounded shell palm
+    const hand = rbox(22, 20, 16, 4, MAT.darkPolycarbonate, side > 0 ? 'R Hand' : 'L Hand');
     hand.position.y = -82;
     forearmG.add(hand);
 
-    // Fingers (simplified 3 fingers)
+    // Fingers (simplified 3 fingers) — slim capsules
     for (let fi = -1; fi <= 1; fi++) {
-      const finger = box(5, 20, 5, MAT.darkSteel);
+      const finger = capsule(2.4, 15, MAT.darkSteel);
       finger.position.set(fi * 6, -96, 0);
       forearmG.add(finger);
     }
@@ -488,12 +506,14 @@ export function buildHumanoid(joints, params) {
     thighG.rotation.x = side > 0 ? joints[10] : joints[7];
     hipJoint.add(thighG);
 
-    const thighMesh = box(28, thigh, 28, MAT.whitePolycarbonate, side > 0 ? 'R Thigh' : 'L Thigh');
+    // Thigh capsule: box was 28 wide, length=thigh, centre -thigh/2.
+    // radius 13 → spans (thigh-26)+26 = thigh, same envelope/centre.
+    const thighMesh = capsule(13, thigh - 26, MAT.whitePolycarbonate, side > 0 ? 'R Thigh' : 'L Thigh');
     thighMesh.position.y = -thigh / 2;
     thighG.add(thighMesh);
 
-    // Thigh actuator cover
-    const thighActuator = cyl(16, 16, thigh - 10, 20, MAT.darkSteel, side > 0 ? 'R Thigh Actuator' : 'L Thigh Actuator');
+    // Thigh actuator cover — dark contrast core just inside the shell
+    const thighActuator = cyl(10, 10, thigh - 18, 20, MAT.darkPolycarbonate, side > 0 ? 'R Thigh Actuator' : 'L Thigh Actuator');
     thighActuator.position.y = -thigh / 2;
     thighG.add(thighActuator);
 
@@ -507,7 +527,9 @@ export function buildHumanoid(joints, params) {
     kneeG.add(kneeBall);
 
     // Shin
-    const shinMesh = box(24, shin, 24, MAT.whitePolycarbonate, side > 0 ? 'R Shin' : 'L Shin');
+    // Shin capsule: box was 24 wide, length=shin, centre -shin/2.
+    // radius 11 → spans (shin-22)+22 = shin, same envelope/centre.
+    const shinMesh = capsule(11, shin - 22, MAT.darkPolycarbonate, side > 0 ? 'R Shin' : 'L Shin');
     shinMesh.position.y = -shin / 2;
     kneeG.add(shinMesh);
 
